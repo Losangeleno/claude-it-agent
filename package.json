@@ -1,0 +1,15 @@
+{
+  "name": "it-knowledge-agent",
+  "version": "4.0.0",
+  "description": "IT Knowledge Base AI Agent",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "docx": "^9.6.1"
+  }
+}
