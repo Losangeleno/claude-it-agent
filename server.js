@@ -7,6 +7,9 @@ const CLIENT_SECRET = "OCy8Q~qnTAqtSfK.8bIdnKVqcCv46zMFGkIhQbtc";
 // ── Teams + Azure AD app (Phase 1 & 2) ───────────────────────────────────────
 const GRAPH_CLIENT_ID     = "9c823e8e-5ce1-480c-8240-e19f6b23512e";
 const GRAPH_CLIENT_SECRET = "pMN8Q~7qNKr6pjEc4j9FLTHBA74rH.CwjwnjmbAg";
+const TEAMS_WEBHOOK_URL   = "https://claudeitagent.webhook.office.com/webhookb2/1dede829-35a4-4d2b-96d4-ab4687aa13a5@e876d5db-a9f8-4e71-abc1-dcee4d8b0578/IncomingWebhook/a5405b78e76940f1b4175bfac7486426/11d7d5c6-f55b-47ef-85e8-f9d17941e2a1/V2Wba6PgaYn13xB5CHkZ8cZsICUrVnSI-PhIA1U2qADrk1";
+const TEAMS_TEAM_ID       = "1dede829-35a4-4d2b-96d4-ab4687aa13a5";
+const TEAMS_CHANNEL_ID    = "19:h3O1iQ3KfOuqLoQKUtbWEa2lLMqHBwjX1qTlTK0lrqw1@thread.tacv2";
 const TENANT_NAME   = "ClaudeITAgent";
 const SITE_NAME     = "ITKnowledgeBase";
 const SENDER_EMAIL  = "manueltucker@claudeitagent.onmicrosoft.com";
@@ -330,10 +333,14 @@ function handleTool(name,args){
     }).catch(function(e){return{content:[{type:"text",text:"get_channel_messages error: "+e.message}]};});
   }
   if(name==="send_channel_message"){
-    var contentType=args.html?"html":"text";
-    return graphPost("/teams/"+args.team_id+"/channels/"+args.channel_id+"/messages",{body:{contentType:contentType,content:args.message}}).then(function(r){
-      return{content:[{type:"text",text:r.id?"Message posted to Teams channel (id: "+r.id+")":"Message post response: "+JSON.stringify(r)}]};
-    }).catch(function(e){return{content:[{type:"text",text:"send_channel_message error: "+e.message}]};});
+    var wUrl=new URL(TEAMS_WEBHOOK_URL);
+    var wBody=JSON.stringify({"@type":"MessageCard","@context":"http://schema.org/extensions","summary":args.message,"themeColor":"0076D7","text":args.message});
+    return new Promise(function(resolve,reject){
+      var d=Buffer.from(wBody,"utf8");
+      var r=https.request({hostname:wUrl.hostname,path:wUrl.pathname+wUrl.search,method:"POST",headers:{"Content-Type":"application/json","Content-Length":d.length}},function(re){var rb="";re.on("data",function(c){rb+=c;});re.on("end",function(){resolve({content:[{type:"text",text:re.statusCode===200?"Message posted to Teams — General channel":"Teams webhook error (HTTP "+re.statusCode+"): "+rb}]});});});
+      r.on("error",function(e){resolve({content:[{type:"text",text:"send_channel_message error: "+e.message}]});});
+      r.write(d);r.end();
+    });
   }
 
   return Promise.resolve({content:[{type:"text",text:"Unknown tool: "+name}]});
