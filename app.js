@@ -762,23 +762,75 @@ const server = http.createServer(function(reqHttp, res) {
           return;
         }
         var route = routeChat(message);
+        // Detect vendor from message for dual-source lookup
+        var msgLower = message.toLowerCase();
+        var detectedVendor = msgLower.includes("fujitsu")||msgLower.includes("scansnap")||msgLower.includes("fi-")?"fujitsu":
+          msgLower.includes("cisco")||msgLower.includes("catalyst")||msgLower.includes("anyconnect")?"cisco":
+          msgLower.includes("dell")||msgLower.includes("optiplex")||msgLower.includes("latitude")||msgLower.includes("idrac")?"dell":
+          msgLower.includes("hp ")||msgLower.includes("laserjet")||msgLower.includes("elitebook")||msgLower.includes("hewlett")?"hp":
+          msgLower.includes("apple")||msgLower.includes("macbook")||msgLower.includes("iphone")||msgLower.includes("ipad")||msgLower.includes("macos")?"apple":null;
+
+        function readAndRespond(files, prefix) {
+          if (files.length > 0 && files[0].driveId && files[0].id) {
+            return handleTool("read_file", {drive_id: files[0].driveId, item_id: files[0].id}).then(function(fileResult) {
+              var fileText = fileResult.content && fileResult.content[0] && fileResult.content[0].text || "";
+              var excerpt = fileText.substring(0, 1500);
+              var response = (prefix||"") + "📄 " + files[0].name.replace(".md","").replace(/-/g," ") + "\n\n" + excerpt + (fileText.length > 1500 ? "\n\n[Ask me to continue for more details...]" : "");
+              res.writeHead(200, {"Content-Type":"application/json"});
+              res.end(JSON.stringify({response: response}));
+            });
+          }
+        }
+
         handleTool(route.tool, route.args).then(function(result) {
           var rawText = result.content && result.content[0] && result.content[0].text || "";
-          // If KB search returned file list, try to read the top file content
+
+          // KB returned file list — read top article immediately
           if (route.tool === "search_kb" && rawText.startsWith("[")) {
             try {
               var files = JSON.parse(rawText);
-              if (files.length > 0 && files[0].driveId && files[0].id) {
-                return handleTool("read_file", {drive_id: files[0].driveId, item_id: files[0].id}).then(function(fileResult) {
-                  var fileText = fileResult.content && fileResult.content[0] && fileResult.content[0].text || "";
-                  var excerpt = fileText.substring(0, 1200);
-                  var response = "📄 " + files[0].name.replace(".md","").replace(/-/g," ") + "\n\n" + excerpt + (fileText.length > 1200 ? "\n\n[Ask me to continue reading for more...]" : "");
-                  res.writeHead(200, {"Content-Type":"application/json"});
-                  res.end(JSON.stringify({response: response}));
-                });
-              }
+              if (files.length > 0) return readAndRespond(files, "");
             } catch(e) {}
           }
+
+          // KB auto-synced from Learn — search again immediately and read result
+          if (route.tool === "search_kb" && rawText.includes("Auto-synced")) {
+            // Also trigger vendor sync in parallel if vendor detected
+            var vendorSync = detectedVendor
+              ? handleTool("sync_vendor_docs", {vendor: detectedVendor, topic: message, library: "Troubleshooting", max_articles: 2})
+              : Promise.resolve(null);
+            return vendorSync.then(function() {
+              return handleTool("search_kb", {query: message});
+            }).then(function(r2) {
+              var t2 = r2.content && r2.content[0] && r2.content[0].text || "";
+              if (t2.startsWith("[")) {
+                try {
+                  var files2 = JSON.parse(t2);
+                  if (files2.length > 0) return readAndRespond(files2, detectedVendor ? "📚 Sources: Microsoft Learn + " + detectedVendor.toUpperCase() + " Support\n\n" : "📚 Source: Microsoft Learn\n\n");
+                } catch(e) {}
+              }
+              res.writeHead(200, {"Content-Type":"application/json"});
+              res.end(JSON.stringify({response: rawText}));
+            });
+          }
+
+          // For vendor queries — also search KB for vendor articles
+          if (detectedVendor && route.tool === "search_kb" && rawText.includes("No results")) {
+            return handleTool("sync_vendor_docs", {vendor: detectedVendor, topic: message, library: "Troubleshooting", max_articles: 3}).then(function() {
+              return handleTool("search_kb", {query: message});
+            }).then(function(r2) {
+              var t2 = r2.content && r2.content[0] && r2.content[0].text || "";
+              if (t2.startsWith("[")) {
+                try {
+                  var files2 = JSON.parse(t2);
+                  if (files2.length > 0) return readAndRespond(files2, "📚 Source: " + detectedVendor.toUpperCase() + " Support\n\n");
+                } catch(e) {}
+              }
+              res.writeHead(200, {"Content-Type":"application/json"});
+              res.end(JSON.stringify({response: "I searched Microsoft Learn and " + detectedVendor.toUpperCase() + " support but couldn't find specific content for: " + message}));
+            });
+          }
+
           var response = formatChatResponse(route.tool, rawText);
           res.writeHead(200, {"Content-Type":"application/json"});
           res.end(JSON.stringify({response: response}));
