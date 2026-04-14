@@ -36,6 +36,227 @@ const TEAMS_CHANNEL_ID = "19:h3O1iQ3KfOuqLoQKUtbWEa2lLMqHBwjX1qTlTK0lrqw1@thread
 // Change this to something secret before deploying
 const API_KEY = process.env.MCP_API_KEY || "claudeITAgent2026";
 
+// ── Vendor support site configuration ────────────────────────────────────────
+const VENDOR_SITES = {
+  cisco:   { domain: "cisco.com",         searchPath: "/c/en/us/search/index.html?query=", label: "Cisco Support" },
+  dell:    { domain: "dell.com",           searchPath: "/support/home/search?query=",       label: "Dell Support" },
+  hp:      { domain: "support.hp.com",     searchPath: "/us-en/search#q=",                 label: "HP Support" },
+  hpe:     { domain: "support.hpe.com",    searchPath: "/hpesc/public/api/document/",      label: "HPE Support" },
+  fujitsu: { domain: "support.fujitsu.com",searchPath: "/sp/support/",                    label: "Fujitsu Support" },
+  apple:   { domain: "support.apple.com",   searchPath: "/",                               label: "Apple Support" }
+};
+
+// Vendor-specific DDG search (site-scoped) → parse top URLs → fetch content
+function searchVendorDocs(vendor, query, maxResults) {
+  maxResults = maxResults || 3;
+  var site = VENDOR_SITES[vendor.toLowerCase()];
+  var searchDomain = site ? site.domain : vendor.toLowerCase() + ".com";
+  var supportPaths = {
+    cisco:   "/c/en/us/support",
+    dell:    "/support",
+    hp:      "/us-en",
+    hpe:     "/hpesc/public",
+    fujitsu: "/sp/support"
+  };
+  var pathFilter = supportPaths[vendor.toLowerCase()] || "/support";
+  var ddgQuery = "site:" + searchDomain + pathFilter + " " + query;
+  return new Promise(function(resolve) {
+    var ddgPath = "/html/?q=" + encodeURIComponent(ddgQuery);
+    var r = https.get({
+      hostname: "html.duckduckgo.com",
+      path: ddgPath,
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "text/html" }
+    }, function(res) {
+      var data = "";
+      res.on("data", function(c) { data += c; });
+      res.on("end", function() {
+        // Extract result URLs and titles from DDG HTML
+        var urls = [];
+        var urlRx = /class="result__url"[^>]*>([^<]+)</g;
+        var titleRx = /class="result__a"[^>]*href="([^"]+)"[^>]*>([^<]+)</g;
+        var matches = [], m;
+        while ((m = titleRx.exec(data)) !== null && matches.length < maxResults) {
+          var href = m[1];
+          var title = m[2].trim();
+          // DDG wraps URLs — extract the actual URL
+          try {
+            var uddg = new URL("https://duckduckgo.com" + href);
+            var actual = uddg.searchParams.get("uddg") || uddg.searchParams.get("u") || href;
+            if (actual.startsWith("http") && actual.includes(searchDomain)) {
+              matches.push({ url: actual, title: title });
+            }
+          } catch(e) {}
+        }
+        // Fallback: grab raw hrefs containing the domain
+        if (!matches.length) {
+          var rawRx = /href="(https?:\/\/[^"]*" + searchDomain.replace(/\./g,"\\\\.")+"[^"]*)"/g;
+          while ((m = rawRx.exec(data)) !== null && matches.length < maxResults) {
+            matches.push({ url: m[1], title: vendor + " support article" });
+          }
+        }
+        resolve(matches);
+      });
+    });
+    r.on("error", function() { resolve([]); });
+    r.setTimeout(12000, function() { r.destroy(); resolve([]); });
+  });
+}
+
+// Pull vendor support articles for a topic and upload to KB
+function syncVendorDocsToKB(vendor, topic, library, maxArticles) {
+  maxArticles = maxArticles || 3;
+  var LIBRARY_DRIVES = {
+    "faqs":            "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d-0YkaK7sToQb9UfBCD0V8l",
+    "troubleshooting": "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d-s9M-vo64gR6RqcavYF4co",
+    "runbooks":        "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d8ntgJz28NVQ5IBUqynE4Gk",
+    "assets":          "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d9OV5yeNjEWSZzs4VJ2fbAB",
+    "cabling":         "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d9lg9HgzNLwT7cu7swCUvqF"
+  };
+  var lib = (library || "troubleshooting").toLowerCase();
+  var driveId = LIBRARY_DRIVES[lib] || LIBRARY_DRIVES["troubleshooting"];
+  var vendorLabel = (VENDOR_SITES[vendor.toLowerCase()] || {}).label || vendor;
+
+  return searchVendorDocs(vendor, topic, maxArticles).then(function(articles) {
+    if (!articles.length) return { vendor: vendor, uploaded: 0, skipped: 0, articles: [] };
+    var uploaded = 0, skipped = 0, articleList = [];
+    return articles.reduce(function(chain, item) {
+      return chain.then(function() {
+        return fetchPageText(item.url, 6000).then(function(content) {
+          if (!content || content.length < 100) { skipped++; return; }
+          var slug = (item.title || topic).replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "-").toLowerCase().substring(0, 55);
+          var filename = vendor.toLowerCase() + "-" + slug + ".md";
+          var markdown = "# " + (item.title || topic) + "\n\n"
+            + "> **Vendor:** " + vendorLabel + "\n"
+            + "> **Source:** " + item.url + "\n"
+            + "> **Synced:** " + new Date().toISOString().split("T")[0] + "\n\n"
+            + content.replace(/\s{3,}/g, "\n\n").trim();
+          var fileData = Buffer.from(markdown, "utf8");
+          return getSPToken().then(function(t) {
+            return new Promise(function(resolve, reject) {
+              var r = https.request({
+                hostname: "graph.microsoft.com",
+                path: "/v1.0/drives/" + driveId + "/root:/" + encodeURIComponent(filename) + ":/content",
+                method: "PUT",
+                headers: { Authorization: "Bearer " + t, "Content-Type": "text/plain; charset=utf-8", "Content-Length": fileData.length }
+              }, function(re) {
+                var d = ""; re.on("data", function(c) { d += c; });
+                re.on("end", function() { resolve(re.statusCode); });
+              });
+              r.on("error", reject); r.write(fileData); r.end();
+            });
+          }).then(function(status) {
+            if (status === 200 || status === 201) {
+              uploaded++;
+              articleList.push({ title: item.title, file: filename, library: lib });
+            } else { skipped++; }
+          }).catch(function() { skipped++; });
+        }).catch(function() { skipped++; });
+      });
+    }, Promise.resolve()).then(function() {
+      return { vendor: vendor, uploaded: uploaded, skipped: skipped, library: lib, articles: articleList };
+    });
+  });
+}
+
+// ── Microsoft Learn topic → KB library mapping ────────────────────────────────
+const LEARN_LIBRARY_MAP = {
+  "windows": "Troubleshooting",
+  "azure": "Troubleshooting",
+  "entra": "Troubleshooting",
+  "intune": "Runbooks",
+  "teams": "Troubleshooting",
+  "outlook": "Troubleshooting",
+  "exchange": "Troubleshooting",
+  "onedrive": "Troubleshooting",
+  "sharepoint": "Troubleshooting",
+  "bitlocker": "Runbooks",
+  "vpn": "Troubleshooting",
+  "dns": "Troubleshooting",
+  "active directory": "Runbooks",
+  "default": "Troubleshooting"
+};
+
+function inferLibrary(topic) {
+  var t = (topic || "").toLowerCase();
+  for (var key of Object.keys(LEARN_LIBRARY_MAP)) {
+    if (key !== "default" && t.includes(key)) return LEARN_LIBRARY_MAP[key];
+  }
+  return LEARN_LIBRARY_MAP["default"];
+}
+
+// ── Fetch and convert a Microsoft Learn article to markdown ──────────────────
+function fetchLearnArticle(url) {
+  return fetchPageText(url, 6000).then(function(text) {
+    if (!text || text.length < 100) return null;
+    // Clean up whitespace artifacts from HTML strip
+    return text.replace(/\s{3,}/g, "\n\n").trim();
+  });
+}
+
+// ── Pull top Learn articles for a topic and upload to KB ─────────────────────
+function syncLearnTopicToKB(topic, library, maxArticles) {
+  maxArticles = maxArticles || 3;
+  return req({
+    hostname: "learn.microsoft.com",
+    path: "/api/search?search=" + encodeURIComponent(topic) + "&locale=en-us&$top=" + maxArticles + "&facet=category&$filter=category%20eq%20%27Documentation%27",
+    method: "GET",
+    headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" }
+  }).then(function(r) {
+    var results = (r.body.results || []).slice(0, maxArticles);
+    if (!results.length) return { uploaded: 0, skipped: 0, articles: [] };
+    var lib = library || inferLibrary(topic);
+    var LIBRARY_DRIVES = {
+      "faqs":             "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d-0YkaK7sToQb9UfBCD0V8l",
+      "troubleshooting":  "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d-s9M-vo64gR6RqcavYF4co",
+      "runbooks":         "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d8ntgJz28NVQ5IBUqynE4Gk",
+      "assets":           "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d9OV5yeNjEWSZzs4VJ2fbAB",
+      "cabling":          "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d9lg9HgzNLwT7cu7swCUvqF"
+    };
+    var driveId = LIBRARY_DRIVES[lib.toLowerCase()];
+    if (!driveId) driveId = LIBRARY_DRIVES["troubleshooting"];
+    var uploaded = 0, skipped = 0, articleList = [];
+    return results.reduce(function(chain, item) {
+      return chain.then(function() {
+        var articleUrl = item.url;
+        if (!articleUrl || !articleUrl.startsWith("https://learn.microsoft.com")) {
+          skipped++;
+          return;
+        }
+        return fetchLearnArticle(articleUrl).then(function(content) {
+          if (!content) { skipped++; return; }
+          var slug = (item.title || topic).replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "-").toLowerCase().substring(0, 60);
+          var filename = "learn-" + slug + ".md";
+          var markdown = "# " + (item.title || topic) + "\n\n";
+          markdown += "> Source: " + articleUrl + "\n";
+          markdown += "> Synced: " + new Date().toISOString().split("T")[0] + "\n\n";
+          markdown += content;
+          var fileData = Buffer.from(markdown, "utf8");
+          return getSPToken().then(function(t) {
+            return new Promise(function(resolve, reject) {
+              var r = https.request({
+                hostname: "graph.microsoft.com",
+                path: "/v1.0/drives/" + driveId + "/root:/" + encodeURIComponent(filename) + ":/content",
+                method: "PUT",
+                headers: { Authorization: "Bearer " + t, "Content-Type": "text/plain; charset=utf-8", "Content-Length": fileData.length }
+              }, function(re) {
+                var d = ""; re.on("data", function(c) { d += c; }); re.on("end", function() { resolve(re.statusCode); });
+              });
+              r.on("error", reject); r.write(fileData); r.end();
+            });
+          }).then(function(status) {
+            if (status === 200 || status === 201) {
+              uploaded++;
+              articleList.push({ title: item.title, file: filename, library: lib });
+            } else { skipped++; }
+          }).catch(function() { skipped++; });
+        }).catch(function() { skipped++; });
+      });
+    }, Promise.resolve()).then(function() {
+      return { uploaded: uploaded, skipped: skipped, library: lib, articles: articleList };
+    });
+  });
+}
+
 // ── Token caches ──────────────────────────────────────────────────────────────
 let spToken=null,spExpiry=0,graphToken=null,graphExpiry=0;
 let ciscoToken=null,ciscoExpiry=0,siteId=null,cachedDrives=[];
@@ -92,13 +313,88 @@ const TOOLS = [
   {name:"list_teams",description:"List all Microsoft Teams in the organisation",inputSchema:{type:"object",properties:{}}},
   {name:"list_channels",description:"List all channels in a Microsoft Team",inputSchema:{type:"object",properties:{team_id:{type:"string"}},required:["team_id"]}},
   {name:"get_channel_messages",description:"Read recent messages from a Teams channel",inputSchema:{type:"object",properties:{team_id:{type:"string"},channel_id:{type:"string"},limit:{type:"number"}},required:["team_id","channel_id"]}},
-  {name:"send_channel_message",description:"Post a message to the IT Agent Teams channel",inputSchema:{type:"object",properties:{message:{type:"string"},html:{type:"boolean"}},required:["message"]}}
+  {name:"send_channel_message",description:"Post a message to the IT Agent Teams channel",inputSchema:{type:"object",properties:{message:{type:"string"},html:{type:"boolean"}},required:["message"]}},
+  // Phase 3 — Microsoft Learn sync
+  {name:"sync_learn_to_kb",description:"Search Microsoft Learn for a topic and save the top articles to the IT Knowledge Base. Automatically picks the right library (Troubleshooting, Runbooks, FAQs).",inputSchema:{type:"object",properties:{topic:{type:"string",description:"The IT topic to search, e.g. 'Windows 11 Event Viewer', 'BitLocker recovery', 'Intune device enrollment'"},library:{type:"string",description:"Override target library: Troubleshooting, Runbooks, FAQs, Assets, Cabling. Leave blank for auto-detect."},max_articles:{type:"number",description:"Number of articles to sync (1-5, default 3)"}},required:["topic"]}},
+  {name:"sync_vendor_docs",description:"Pull support documentation from Cisco, Dell, HP/HPE, Fujitsu, or Apple and save to the IT Knowledge Base.",inputSchema:{type:"object",properties:{vendor:{type:"string",enum:["cisco","dell","hp","hpe","fujitsu","apple"],description:"The vendor to search"},topic:{type:"string",description:"The support topic"},library:{type:"string",description:"Target KB library: Troubleshooting, Runbooks, FAQs. Default: Troubleshooting"},max_articles:{type:"number",description:"Number of articles to pull (1-5, default 3)"}},required:["vendor","topic"]}},
+  // Phase 4 — Intune / Device Management
+  {name:"get_intune_devices",description:"List all devices enrolled in Microsoft Intune. Filter by platform (windows, ios, macos, android), user, or compliance state.",inputSchema:{type:"object",properties:{platform:{type:"string",description:"Filter by OS: windows, ios, macos, android. Leave blank for all."},user:{type:"string",description:"Filter by user email or display name"},compliance:{type:"string",enum:["compliant","noncompliant","unknown","all"],description:"Filter by compliance state. Default: all"},limit:{type:"number",description:"Max results (default 25, max 100)"}}}},
+  {name:"get_intune_device",description:"Get full details for a specific Intune-managed device by device name, serial number, or device ID.",inputSchema:{type:"object",properties:{device:{type:"string",description:"Device name, serial number, or Intune device ID"}},required:["device"]}},
+  {name:"get_noncompliant_devices",description:"List all non-compliant devices in Intune with the reason they are out of compliance. Use to identify devices that need attention.",inputSchema:{type:"object",properties:{platform:{type:"string",description:"Filter by OS: windows, ios, macos, android. Leave blank for all."}}}},
+  {name:"get_device_compliance",description:"Get the compliance status and policy details for a specific user or device.",inputSchema:{type:"object",properties:{user:{type:"string",description:"User email or UPN to check all their devices"},device:{type:"string",description:"Device name or ID to check a specific device"}}}},
+  {name:"sync_intune_device",description:"Trigger an immediate Intune sync on a device to push latest policies and check compliance.",inputSchema:{type:"object",properties:{device_id:{type:"string",description:"Intune device ID (get from get_intune_device)"}},required:["device_id"]}},
+  {name:"get_intune_apps",description:"List apps deployed through Intune and their installation status across devices.",inputSchema:{type:"object",properties:{app_name:{type:"string",description:"Filter by app name (partial match)"},limit:{type:"number",description:"Max results (default 20)"}}}}
 ];
 
 // ── Tool handlers ─────────────────────────────────────────────────────────────
 function handleTool(name, args) {
   // KB tools
-  if(name==="search_kb"){return getSiteId().then(function(id){return graph("/sites/"+id+"/drive/root/search(q='"+encodeURIComponent(args.query)+"')");}).then(function(d){var r=(d.value||[]).slice(0,8).map(function(f){return{name:f.name,id:f.id,driveId:f.parentReference&&f.parentReference.driveId,library:f.parentReference&&f.parentReference.name};});return{content:[{type:"text",text:r.length?JSON.stringify(r,null,2):"No results for: "+args.query}]};});}
+  if(name==="search_kb"){return getSiteId().then(function(id){return graph("/sites/"+id+"/drive/root/search(q='"+encodeURIComponent(args.query)+"')");}).then(function(d){var r=(d.value||[]).slice(0,8).map(function(f){return{name:f.name,id:f.id,driveId:f.parentReference&&f.parentReference.driveId,library:f.parentReference&&f.parentReference.name};});if(r.length)return{content:[{type:"text",text:JSON.stringify(r,null,2)}]};// Auto-fallback: KB empty → pull from Microsoft Learn and upload
+    return syncLearnTopicToKB(args.query,null,3).then(function(sync){if(sync.uploaded>0){return{content:[{type:"text",text:"KB had no results. Auto-synced "+sync.uploaded+" article(s) from Microsoft Learn into "+sync.library+":\n"+sync.articles.map(function(a){return"• "+a.title+" → "+a.file;}).join("\n")+"\n\nSearch your KB again to retrieve the content."}]};}return{content:[{type:"text",text:"No results in KB and no matching Microsoft Learn articles found for: "+args.query}]};});});}
+  if(name==="sync_learn_to_kb"){return syncLearnTopicToKB(args.topic,args.library,args.max_articles||3).then(function(r){var msg=r.uploaded>0?"Synced "+r.uploaded+" article(s) to "+r.library+":\n"+r.articles.map(function(a){return"• "+a.title+" ("+a.file+")";}).join("\n"):"Nothing uploaded. Skipped: "+r.skipped+" (no content or upload error).";return{content:[{type:"text",text:msg}]};}).catch(function(e){return{content:[{type:"text",text:"sync_learn_to_kb error: "+e.message}]};});}
+  // Intune / Device Management tools
+  if(name==="get_intune_devices"){
+    var path="/deviceManagement/managedDevices?$top="+(args.limit||25)+"&$select=id,deviceName,operatingSystem,osVersion,complianceState,userDisplayName,userPrincipalName,serialNumber,lastSyncDateTime,managedDeviceOwnerType,enrolledDateTime,model,manufacturer,emailAddress";
+    var filters=[];
+    if(args.platform)filters.push("operatingSystem eq '"+args.platform+"'");
+    if(args.compliance&&args.compliance!=="all")filters.push("complianceState eq '"+args.compliance+"'");
+    if(filters.length)path+="&$filter="+encodeURIComponent(filters.join(" and "));
+    return graphGet(path).then(function(d){
+      var devices=(d.value||[]);
+      if(args.user){var u=args.user.toLowerCase();devices=devices.filter(function(dev){return(dev.userDisplayName||"").toLowerCase().includes(u)||(dev.userPrincipalName||"").toLowerCase().includes(u);});}
+      if(!devices.length)return{content:[{type:"text",text:"No devices found matching the criteria."}]};
+      var summary=devices.map(function(dev){return{name:dev.deviceName,user:dev.userDisplayName,email:dev.userPrincipalName,os:dev.operatingSystem+" "+dev.osVersion,compliance:dev.complianceState,serial:dev.serialNumber,model:dev.manufacturer+" "+dev.model,lastSync:dev.lastSyncDateTime,enrolled:dev.enrolledDateTime};});
+      return{content:[{type:"text",text:"Found "+devices.length+" device(s):\n\n"+JSON.stringify(summary,null,2)}]};
+    }).catch(function(e){return{content:[{type:"text",text:"get_intune_devices error: "+e.message}]};});
+  }
+  if(name==="get_intune_device"){
+    var searchTerm=args.device;
+    return graphGet("/deviceManagement/managedDevices?$top=100&$select=id,deviceName,operatingSystem,osVersion,complianceState,userDisplayName,userPrincipalName,serialNumber,lastSyncDateTime,model,manufacturer,emailAddress,imei,wiFiMacAddress,totalStorageSpaceInBytes,freeStorageSpaceInBytes,isEncrypted,isSupervised,managementState,enrolledDateTime,deviceEnrollmentType").then(function(d){
+      var devices=(d.value||[]);
+      var found=devices.find(function(dev){return(dev.deviceName||"").toLowerCase()===searchTerm.toLowerCase()||(dev.serialNumber||"").toLowerCase()===searchTerm.toLowerCase()||dev.id===searchTerm;});
+      if(!found)found=devices.find(function(dev){return(dev.deviceName||"").toLowerCase().includes(searchTerm.toLowerCase());});
+      if(!found)return{content:[{type:"text",text:"No device found matching: "+searchTerm}]};
+      var gb=1073741824;
+      var detail={id:found.id,name:found.deviceName,user:found.userDisplayName,email:found.userPrincipalName,os:found.operatingSystem+" "+found.osVersion,compliance:found.complianceState,serial:found.serialNumber,model:found.manufacturer+" "+found.model,imei:found.imei,wifiMac:found.wiFiMacAddress,storage:{totalGB:Math.round(found.totalStorageSpaceInBytes/gb*10)/10,freeGB:Math.round(found.freeStorageSpaceInBytes/gb*10)/10},encrypted:found.isEncrypted,supervised:found.isSupervised,managementState:found.managementState,enrolled:found.enrolledDateTime,lastSync:found.lastSyncDateTime};
+      return{content:[{type:"text",text:JSON.stringify(detail,null,2)}]};
+    }).catch(function(e){return{content:[{type:"text",text:"get_intune_device error: "+e.message}]};});
+  }
+  if(name==="get_noncompliant_devices"){
+    var ncPath="/deviceManagement/managedDevices?$filter=complianceState%20eq%20'noncompliant'&$top=50&$select=id,deviceName,operatingSystem,osVersion,userDisplayName,userPrincipalName,serialNumber,lastSyncDateTime,model,manufacturer";
+    if(args.platform)ncPath="/deviceManagement/managedDevices?$filter=complianceState%20eq%20'noncompliant'%20and%20operatingSystem%20eq%20'"+args.platform+"'&$top=50&$select=id,deviceName,operatingSystem,osVersion,userDisplayName,userPrincipalName,serialNumber,lastSyncDateTime";
+    return graphGet(ncPath).then(function(d){
+      var devices=(d.value||[]);
+      if(!devices.length)return{content:[{type:"text",text:"✓ No non-compliant devices found"+(args.platform?" for "+args.platform:"")+"!"}]};
+      var list=devices.map(function(dev){return{name:dev.deviceName,user:dev.userDisplayName,os:dev.operatingSystem+" "+dev.osVersion,serial:dev.serialNumber,lastSync:dev.lastSyncDateTime};});
+      return{content:[{type:"text",text:"⚠ "+devices.length+" non-compliant device(s):\n\n"+JSON.stringify(list,null,2)}]};
+    }).catch(function(e){return{content:[{type:"text",text:"get_noncompliant_devices error: "+e.message}]};});
+  }
+  if(name==="get_device_compliance"){
+    if(!args.user&&!args.device)return Promise.resolve({content:[{type:"text",text:"Provide either a user email or device name."}]});
+    var compPath=args.device?"/deviceManagement/managedDevices?$filter=deviceName%20eq%20'"+encodeURIComponent(args.device)+"'&$top=5":"/deviceManagement/managedDevices?$top=100";
+    return graphGet(compPath+"&$select=id,deviceName,complianceState,operatingSystem,osVersion,userDisplayName,userPrincipalName,lastSyncDateTime,isEncrypted,passcodeCompliant").then(function(d){
+      var devices=(d.value||[]);
+      if(args.user){var u=args.user.toLowerCase();devices=devices.filter(function(dev){return(dev.userPrincipalName||"").toLowerCase().includes(u)||(dev.userDisplayName||"").toLowerCase().includes(u);});}
+      if(!devices.length)return{content:[{type:"text",text:"No devices found for: "+(args.user||args.device)}]};
+      var result=devices.map(function(dev){return{device:dev.deviceName,compliance:dev.complianceState,os:dev.operatingSystem+" "+dev.osVersion,encrypted:dev.isEncrypted,lastSync:dev.lastSyncDateTime,user:dev.userDisplayName};});
+      return{content:[{type:"text",text:JSON.stringify(result,null,2)}]};
+    }).catch(function(e){return{content:[{type:"text",text:"get_device_compliance error: "+e.message}]};});
+  }
+  if(name==="sync_intune_device"){
+    return graphGet("/deviceManagement/managedDevices/"+args.device_id).then(function(dev){
+      var b=JSON.stringify({});
+      return getGraphToken().then(function(t){return new Promise(function(resolve,reject){var data=Buffer.from(b,"utf8");var r=https.request({hostname:"graph.microsoft.com",path:"/v1.0/deviceManagement/managedDevices/"+args.device_id+"/syncDevice",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":data.length}},function(re){var d="";re.on("data",function(c){d+=c;});re.on("end",function(){resolve({status:re.statusCode,body:d});});});r.on("error",reject);r.write(data);r.end();});}).then(function(r){if(r.status===204||r.status===200)return{content:[{type:"text",text:"✓ Sync triggered for device: "+(dev.deviceName||args.device_id)+". Device will check in shortly."}]};return{content:[{type:"text",text:"Sync request returned HTTP "+r.status+": "+r.body}]};});
+    }).catch(function(e){return{content:[{type:"text",text:"sync_intune_device error: "+e.message}]};});
+  }
+  if(name==="get_intune_apps"){
+    var appPath="/deviceAppManagement/mobileApps?$top="+(args.limit||20)+"&$select=id,displayName,publisher,appAvailability,publishingState,createdDateTime";
+    if(args.app_name)appPath+="&$filter=contains(displayName,'"+encodeURIComponent(args.app_name)+"')";
+    return graphGet(appPath).then(function(d){
+      var apps=(d.value||[]).map(function(a){return{name:a.displayName,publisher:a.publisher,state:a.publishingState,available:a.appAvailability,created:a.createdDateTime};});
+      return{content:[{type:"text",text:apps.length?JSON.stringify(apps,null,2):"No apps found"+(args.app_name?" matching: "+args.app_name:"")+"."}]};
+    }).catch(function(e){return{content:[{type:"text",text:"get_intune_apps error: "+e.message}]};});
+  }
+  if(name==="sync_vendor_docs"){var validVendors=["cisco","dell","hp","hpe","fujitsu","apple"];if(!validVendors.includes((args.vendor||"").toLowerCase()))return Promise.resolve({content:[{type:"text",text:"Invalid vendor. Use: cisco, dell, hp, hpe, or fujitsu"}]});return syncVendorDocsToKB(args.vendor,args.topic,args.library||"troubleshooting",args.max_articles||3).then(function(r){var msg=r.uploaded>0?"Synced "+r.uploaded+" "+r.vendor.toUpperCase()+" article(s) to "+r.library+":\n"+r.articles.map(function(a){return"• "+a.title+" ("+a.file+")";}).join("\n"):"No "+r.vendor.toUpperCase()+" articles found or uploaded for: "+args.topic+". Skipped: "+r.skipped;return{content:[{type:"text",text:msg}]};}).catch(function(e){return{content:[{type:"text",text:"sync_vendor_docs error: "+e.message}]};});}
   if(name==="list_library"){return getDrives().then(function(drives){var drive=drives.find(function(d){return d.name.toLowerCase()===args.library.toLowerCase();});if(!drive)return{content:[{type:"text",text:"Available: "+drives.map(function(d){return d.name;}).join(", ")}]};return graph("/drives/"+drive.id+"/root/children").then(function(d){return{content:[{type:"text",text:JSON.stringify((d.value||[]).map(function(f){return{name:f.name,id:f.id,driveId:drive.id};}),null,2)}]};})});}
   if(name==="read_file"){return graph("/drives/"+args.drive_id+"/items/"+args.item_id).then(function(meta){var url=meta["@microsoft.graph.downloadUrl"];if(!url)return{content:[{type:"text",text:"Cannot download."}]};var u=new URL(url);return new Promise(function(resolve,reject){https.get({hostname:u.hostname,path:u.pathname+u.search},function(res){var d="";res.on("data",function(c){d+=c;});res.on("end",function(){resolve({content:[{type:"text",text:d.substring(0,8000)}]});});}).on("error",reject);});});}
   if(name==="ms_service_health"){var p=args&&args.service?"/admin/serviceAnnouncement/issues?$filter=status%20ne%20%27resolved%27%20and%20contains(service,%27"+encodeURIComponent(args.service)+"%27)":"/admin/serviceAnnouncement/issues?$filter=status%20ne%20%27resolved%27&$top=10";return graph(p).then(function(d){var issues=(d.value||[]).map(function(i){return{title:i.title,service:i.service,status:i.status,severity:i.classification};});return{content:[{type:"text",text:issues.length?"Active issues:\n"+JSON.stringify(issues,null,2):"All Microsoft 365 services healthy!"}]};});}
@@ -203,7 +499,7 @@ function processMCP(msg, sseRes) {
     sendSSE(sseRes, {jsonrpc:"2.0",id:msg.id,result:{
       protocolVersion:"2025-11-25",
       capabilities:{tools:{listChanged:false}},
-      serverInfo:{name:"it-knowledge-agent",version:"7.0.0"}
+      serverInfo:{name:"it-knowledge-agent",version:"9.0.0"}
     }});
   } else if (msg.method === "notifications/initialized") {
     // no response needed
@@ -260,10 +556,10 @@ const server = http.createServer(function(reqHttp, res) {
     return;
   }
   res.writeHead(200, {"Content-Type":"application/json"});
-  res.end(JSON.stringify({name:"IT Knowledge Agent",version:"7.0.0",status:"running",endpoints:["/sse","/message","/health","/query"]}));
+  res.end(JSON.stringify({name:"IT Knowledge Agent",version:"8.0.0",status:"running",endpoints:["/sse","/message","/health","/query","/sync"]}));
 });
 
 server.listen(PORT, function() {
-  console.log("IT Knowledge Agent v7.0 running on port " + PORT);
+  console.log("IT Knowledge Agent v9.0 running on port " + PORT);
   console.log("MCP SSE endpoint: /sse");
 });
