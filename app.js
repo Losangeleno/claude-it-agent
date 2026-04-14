@@ -89,7 +89,7 @@ function searchVendorDocs(vendor, query, maxResults) {
         }
         // Fallback: grab raw hrefs containing the domain
         if (!matches.length) {
-          var rawRx = /href="(https?:\/\/[^"]*" + searchDomain.replace(/\./g,"\\\\.")+"[^"]*)"/g;
+          var rawRx = new RegExp('href="(https?:\\/\\/[^"]*' + searchDomain.replace(/\./g, '\\.') + '[^"]*)"', 'g');
           while ((m = rawRx.exec(data)) !== null && matches.length < maxResults) {
             matches.push({ url: m[1], title: vendor + " support article" });
           }
@@ -796,7 +796,7 @@ const server = http.createServer(function(reqHttp, res) {
 
   if (path === "/health") {
     res.writeHead(200, {"Content-Type":"application/json"});
-    res.end(JSON.stringify({status:"healthy",version:"7.0.0",time:new Date().toISOString()}));
+    res.end(JSON.stringify({status:"healthy",version:"10.0.0",time:new Date().toISOString()}));
     return;
   }
   // Legacy REST endpoint
