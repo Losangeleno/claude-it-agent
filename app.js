@@ -499,7 +499,7 @@ function processMCP(msg, sseRes) {
     sendSSE(sseRes, {jsonrpc:"2.0",id:msg.id,result:{
       protocolVersion:"2025-11-25",
       capabilities:{tools:{listChanged:false}},
-      serverInfo:{name:"it-knowledge-agent",version:"9.0.0"}
+      serverInfo:{name:"it-knowledge-agent",version:"10.0.0"}
     }});
   } else if (msg.method === "notifications/initialized") {
     // no response needed
@@ -518,6 +518,210 @@ function processMCP(msg, sseRes) {
   }
 }
 
+// ── Chat intent router ────────────────────────────────────────────────────────
+function extractName(msg, keywords) {
+  for (var kw of keywords) {
+    var idx = msg.toLowerCase().indexOf(kw.toLowerCase());
+    if (idx !== -1) {
+      var after = msg.substring(idx + kw.length).trim();
+      if (after) return after.split(/[,.\?!\n]/)[0].trim();
+    }
+  }
+  var emailMatch = msg.match(/[\w.+-]+@[\w.-]+\.\w+/);
+  if (emailMatch) return emailMatch[0];
+  return null;
+}
+
+function routeChat(message) {
+  var m = message.toLowerCase();
+  // Non-compliant devices
+  if (m.includes("non-compliant")||m.includes("noncompliant")||m.includes("not compliant")||m.includes("out of compliance")||m.includes("compliance issue")) {
+    var pl=m.includes("ios")||m.includes("iphone")||m.includes("ipad")?"ios":m.includes("mac")||m.includes("macos")?"macos":m.includes("android")?"android":m.includes("windows")||m.includes("pc")?"windows":null;
+    return {tool:"get_noncompliant_devices",args:pl?{platform:pl}:{}};
+  }
+  // List/all devices
+  if ((m.includes("list")||m.includes("all")||m.includes("show")||m.includes("how many"))&&(m.includes("device")||m.includes("enrolled")||m.includes("managed"))) {
+    var pl=m.includes("ios")||m.includes("iphone")||m.includes("ipad")?"ios":m.includes("mac")||m.includes("macos")?"macos":m.includes("android")?"android":m.includes("windows")||m.includes("pc")?"windows":null;
+    var userFilter=extractName(message,["devices for","devices owned by","enrolled by"]);
+    return {tool:"get_intune_devices",args:Object.assign(pl?{platform:pl}:{},userFilter?{user:userFilter}:{})};
+  }
+  // Compliance check for user/device
+  if (m.includes("complian")&&(m.includes("@")||m.includes("user")||m.includes("device")||m.includes("is "))) {
+    var name=extractName(message,["compliance for","compliant is","check","is "," for"]);
+    return {tool:"get_device_compliance",args:name?{user:name}:{}};
+  }
+  // Single device detail
+  if ((m.includes("find device")||m.includes("device info")||m.includes("look up device")||m.includes("show device")||m.includes("details for"))&&m.includes("device")) {
+    var name=extractName(message,["device named","device called","device info for","find device","show device","details for"]);
+    if(name) return {tool:"get_intune_device",args:{device:name}};
+  }
+  // Sync device
+  if (m.includes("sync")&&m.includes("device")) {
+    var name=extractName(message,["sync device","sync "]);
+    return {tool:name?"get_intune_device":"get_noncompliant_devices",args:name?{device:name}:{},followUp:"sync"};
+  }
+  // Apps
+  if ((m.includes("app")||m.includes("application"))&&(m.includes("deployed")||m.includes("installed")||m.includes("list app")||m.includes("show app"))) {
+    var name=extractName(message,["app named","app called","app "]);
+    return {tool:"get_intune_apps",args:name?{app_name:name}:{}};
+  }
+  // User lookup
+  if (m.includes("who is")||m.includes("look up user")||m.includes("find user")||m.includes("user info")||m.includes("search user")) {
+    var name=extractName(message,["who is","look up user","find user","user info for","search for user","search user"]);
+    if(name&&name.includes("@")) return {tool:"get_user",args:{user_id:name}};
+    if(name) return {tool:"search_users",args:{query:name}};
+  }
+  // Sign-in logs
+  if (m.includes("sign-in")||m.includes("signin")||m.includes("login log")||m.includes("login history")||m.includes("access log")||m.includes("who logged in")) {
+    var name=extractName(message,["sign-in for","signin for","login for","logs for","history for"]);
+    return {tool:"get_sign_in_logs",args:name?{user_id:name,limit:10}:{limit:10}};
+  }
+  // User groups
+  if ((m.includes("group")||m.includes("member of"))&&(m.includes("user")||m.includes("@"))) {
+    var name=extractName(message,["groups for","member of","groups of"]);
+    if(name) return {tool:"get_user_groups",args:{user_id:name}};
+  }
+  // Service health
+  if (m.includes("service health")||m.includes("outage")||(m.includes("down")&&(m.includes("teams")||m.includes("outlook")||m.includes("sharepoint")||m.includes("m365")||m.includes("office")))||m.includes("is microsoft down")) {
+    var svc=m.includes("teams")?"Teams":m.includes("outlook")||m.includes("exchange")?"Exchange":m.includes("sharepoint")?"SharePoint":m.includes("onedrive")?"OneDrive":null;
+    return {tool:"ms_service_health",args:svc?{service:svc}:{}};
+  }
+  // Maintenance
+  if (m.includes("maintenance")||m.includes("planned change")||m.includes("upcoming update")) {
+    return {tool:"ms_maintenance",args:{}};
+  }
+  // Cisco advisories / CVE
+  if ((m.includes("advisory")||m.includes("advisories")||m.includes("vulnerability"))&&m.includes("cisco")) {
+    var product=extractName(message,["cisco","advisory for","vulnerabilit"]);
+    return {tool:"cisco_advisories",args:{product:product||"cisco"}};
+  }
+  if (m.match(/cve-\d{4}-\d+/i)) {
+    var cve=m.match(/cve-\d{4}-\d+/i)[0].toUpperCase();
+    return {tool:"cisco_cve",args:{cve:cve}};
+  }
+  // Teams messages
+  if ((m.includes("teams message")||m.includes("channel message")||m.includes("recent message"))&&m.includes("teams")) {
+    return {tool:"get_channel_messages",args:{team_id:TEAMS_TEAM_ID,channel_id:TEAMS_CHANNEL_ID,limit:5}};
+  }
+  // Vendor docs
+  if (m.includes("cisco")||m.includes("dell")||m.includes("hp ")||m.includes("hewlett")||m.includes("fujitsu")||m.includes("apple")||m.includes("macbook")||m.includes("iphone")||m.includes("ipad")) {
+    return {tool:"search_kb",args:{query:message}};
+  }
+  // Default: KB search
+  return {tool:"search_kb",args:{query:message}};
+}
+
+function formatChatResponse(toolName, rawText) {
+  if (!rawText||rawText.trim()==="") return "No response received.";
+  // Try to parse JSON for richer formatting
+  try {
+    var data=JSON.parse(rawText);
+    if(Array.isArray(data)&&data.length===0) return "No results found.";
+    if(Array.isArray(data)) {
+      if(toolName==="get_intune_devices"||toolName==="get_noncompliant_devices") {
+        return (toolName==="get_noncompliant_devices"?"⚠️ ":"📱 ")+(data.length)+" device(s) found:\n\n"+data.map(function(d){return "📱 "+d.name+"\n   👤 "+(d.user||d.email||"Unknown")+"\n   💻 "+(d.os||"")+"\n   "+(d.compliance==="compliant"?"✅":"⚠️")+" "+d.compliance+"\n   🕐 Last sync: "+(d.lastSync?new Date(d.lastSync).toLocaleString():"Unknown");}).join("\n\n");
+      }
+      if(toolName==="search_users") return "👥 "+data.length+" user(s) found:\n\n"+data.map(function(u){return "👤 "+u.name+"\n   "+u.upn+"\n   "+(u.dept||"No department")+" | "+(u.enabled?"✅ Active":"🔴 Disabled");}).join("\n\n");
+      if(toolName==="get_channel_messages") return "💬 Recent Teams messages:\n\n"+data.map(function(msg){return "• "+msg.from+" ("+new Date(msg.time).toLocaleString()+"):\n  "+msg.message;}).join("\n\n");
+      if(toolName==="search_kb") return "📚 "+data.length+" KB article(s) found:\n\n"+data.map(function(f,i){return (i+1)+". 📄 "+f.name.replace(".md","").replace(/-/g," ")+"\n   Library: "+(f.library||"KB");}).join("\n\n")+"\n\nAsk me to read any of these articles for details.";
+      if(toolName==="get_device_compliance") return "🔍 Compliance status:\n\n"+data.map(function(d){return "📱 "+d.device+"\n   "+(d.compliance==="compliant"?"✅ Compliant":"⚠️ "+d.compliance)+"\n   💻 "+d.os+"\n   🔐 Encrypted: "+(d.encrypted?"Yes":"No")+"\n   🕐 "+new Date(d.lastSync).toLocaleString();}).join("\n\n");
+      if(toolName==="get_user_groups") return "🏷️ Group memberships:\n\n"+data.map(function(g){return "• "+g.name+(g.description?"\n  "+g.description:"");}).join("\n\n");
+      if(toolName==="get_sign_in_logs") return "🔐 Recent sign-ins:\n\n"+data.slice(0,8).map(function(s){return "• "+(s.userDisplayName||s.userPrincipalName||"Unknown")+"\n  App: "+(s.appDisplayName||"Unknown")+"\n  IP: "+(s.ipAddress||"Unknown")+"\n  "+(s.status&&s.status.errorCode===0?"✅ Success":"❌ Failed")+"\n  🕐 "+new Date(s.createdDateTime).toLocaleString();}).join("\n\n");
+      if(toolName==="get_intune_apps") return "📦 "+data.length+" app(s) deployed:\n\n"+data.map(function(a){return "• "+a.name+(a.publisher?"\n  Publisher: "+a.publisher:"")+(a.state?"\n  State: "+a.state:"");}).join("\n\n");
+      return rawText;
+    }
+    // Single object
+    if(toolName==="get_user") return "👤 "+data.displayName+"\n📧 "+data.upn+"\n🏢 "+(data.department||"No department")+"\n💼 "+(data.jobTitle||"No title")+"\n"+(data.accountEnabled?"✅ Account active":"🔴 Account disabled")+"\n🔑 Password last changed: "+(data.lastPasswordChange?new Date(data.lastPasswordChange).toLocaleDateString():"Unknown");
+    if(toolName==="get_intune_device") return "📱 "+data.name+"\n👤 "+(data.user||data.email||"Unknown")+"\n💻 "+(data.os||"")+"\n🔧 "+(data.model||"")+"\n🔢 Serial: "+(data.serial||"Unknown")+"\n"+(data.compliance==="compliant"?"✅ Compliant":"⚠️ "+data.compliance)+"\n🔐 Encrypted: "+(data.encrypted?"Yes":"No")+"\n💾 Storage: "+(data.storage?data.storage.freeGB+" GB free of "+data.storage.totalGB+" GB":"Unknown")+"\n🕐 Last sync: "+(data.lastSync?new Date(data.lastSync).toLocaleString():"Unknown");
+    return rawText;
+  } catch(e) { return rawText; }
+}
+
+// ── Chat HTML UI ──────────────────────────────────────────────────────────────
+var CHAT_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>IT Agent</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1117;color:#e8eaf0;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+header{background:linear-gradient(135deg,#0078d4,#005a9e);padding:14px 18px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(0,0,0,.4);flex-shrink:0}
+.dot{width:9px;height:9px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80}
+header h1{font-size:17px;font-weight:700;letter-spacing:.3px}
+header span{font-size:12px;opacity:.75;margin-left:auto}
+#msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
+.bubble{max-width:88%;padding:11px 15px;border-radius:18px;font-size:14px;line-height:1.55;word-wrap:break-word;white-space:pre-wrap}
+.user{background:#0078d4;color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+.agent{background:#1e2130;color:#e8eaf0;align-self:flex-start;border-bottom-left-radius:4px;border:1px solid #2a2d3e}
+.agent.loading{color:#6b7280;font-style:italic}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.chip{padding:6px 13px;background:#0078d415;border:1px solid #0078d460;border-radius:20px;font-size:12px;cursor:pointer;color:#60a5fa;transition:background .2s}
+.chip:hover{background:#0078d430}
+footer{padding:10px 12px;background:#161824;border-top:1px solid #2a2d3e;display:flex;gap:8px;flex-shrink:0}
+#inp{flex:1;padding:11px 16px;border-radius:22px;border:1px solid #2a2d3e;background:#1e2130;color:#e8eaf0;font-size:15px;outline:none;transition:border .2s}
+#inp:focus{border-color:#0078d4}
+#inp::placeholder{color:#6b7280}
+button{padding:11px 20px;border-radius:22px;border:none;background:#0078d4;color:#fff;font-size:15px;cursor:pointer;font-weight:600;flex-shrink:0;transition:background .2s}
+button:hover{background:#106ebe}
+button:active{background:#005a9e}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#2a2d3e;border-radius:4px}
+</style>
+</head>
+<body>
+<header>
+  <div class="dot"></div>
+  <h1>🔧 IT Agent</h1>
+  <span>Field Support</span>
+</header>
+<div id="msgs">
+  <div class="bubble agent">Hi! I'm your IT Knowledge Agent. Ask me anything — devices, users, KB articles, service health, or vendor troubleshooting.
+<div class="chips">
+  <span class="chip" onclick="ask(this.textContent)">Non-compliant devices</span>
+  <span class="chip" onclick="ask(this.textContent)">M365 service health</span>
+  <span class="chip" onclick="ask(this.textContent)">Search KB for VPN issues</span>
+  <span class="chip" onclick="ask(this.textContent)">List enrolled devices</span>
+  <span class="chip" onclick="ask(this.textContent)">Cisco switch troubleshooting</span>
+  <span class="chip" onclick="ask(this.textContent)">HP printer offline fix</span>
+</div>
+  </div>
+</div>
+<footer>
+  <input id="inp" placeholder="Ask anything..." autocomplete="off" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}">
+  <button onclick="send()">Send</button>
+</footer>
+<script>
+var API_KEY='claudeITAgent2026';
+function ask(t){document.getElementById('inp').value=t;send()}
+function send(){
+  var inp=document.getElementById('inp');
+  var msg=inp.value.trim();
+  if(!msg)return;
+  inp.value='';
+  addBubble(msg,'user');
+  var loader=addBubble('Thinking...','agent loading');
+  fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+API_KEY},body:JSON.stringify({message:msg})})
+    .then(function(r){return r.json()})
+    .then(function(d){loader.remove();addBubble(d.response||'No response','agent')})
+    .catch(function(e){loader.remove();addBubble('Error: '+e.message,'agent')});
+}
+function addBubble(text,cls){
+  var d=document.createElement('div');
+  d.className='bubble '+cls;
+  d.textContent=text;
+  var msgs=document.getElementById('msgs');
+  msgs.appendChild(d);
+  msgs.scrollTop=msgs.scrollHeight;
+  return d;
+}
+document.getElementById('inp').focus();
+</script>
+</body>
+</html>`;
+
 // ── HTTP server ───────────────────────────────────────────────────────────────
 const server = http.createServer(function(reqHttp, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -529,6 +733,67 @@ const server = http.createServer(function(reqHttp, res) {
 
   if (path === "/sse" && reqHttp.method === "GET") { handleSSE(reqHttp, res); return; }
   if (path === "/message" && reqHttp.method === "POST") { handleMessage(reqHttp, res); return; }
+
+  // ── Web Chat UI ──────────────────────────────────────────────────────────
+  if (path === "/chat" && reqHttp.method === "GET") {
+    res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
+    res.end(CHAT_HTML);
+    return;
+  }
+  if (path === "/chat" && reqHttp.method === "POST") {
+    if (!checkAuth(reqHttp)) {
+      // For browser clients, check a session cookie or embedded key
+      var authHeader = reqHttp.headers["authorization"] || "";
+      if (authHeader !== "Bearer " + API_KEY) {
+        res.writeHead(401, {"Content-Type":"application/json"});
+        res.end(JSON.stringify({error:"Unauthorized"}));
+        return;
+      }
+    }
+    var chatBody = "";
+    reqHttp.on("data", function(c) { chatBody += c; });
+    reqHttp.on("end", function() {
+      try {
+        var parsed = JSON.parse(chatBody);
+        var message = parsed.message || "";
+        if (!message.trim()) {
+          res.writeHead(400, {"Content-Type":"application/json"});
+          res.end(JSON.stringify({error:"Empty message"}));
+          return;
+        }
+        var route = routeChat(message);
+        handleTool(route.tool, route.args).then(function(result) {
+          var rawText = result.content && result.content[0] && result.content[0].text || "";
+          // If KB search returned file list, try to read the top file content
+          if (route.tool === "search_kb" && rawText.startsWith("[")) {
+            try {
+              var files = JSON.parse(rawText);
+              if (files.length > 0 && files[0].driveId && files[0].id) {
+                return handleTool("read_file", {drive_id: files[0].driveId, item_id: files[0].id}).then(function(fileResult) {
+                  var fileText = fileResult.content && fileResult.content[0] && fileResult.content[0].text || "";
+                  var excerpt = fileText.substring(0, 1200);
+                  var response = "📄 " + files[0].name.replace(".md","").replace(/-/g," ") + "\n\n" + excerpt + (fileText.length > 1200 ? "\n\n[Ask me to continue reading for more...]" : "");
+                  res.writeHead(200, {"Content-Type":"application/json"});
+                  res.end(JSON.stringify({response: response}));
+                });
+              }
+            } catch(e) {}
+          }
+          var response = formatChatResponse(route.tool, rawText);
+          res.writeHead(200, {"Content-Type":"application/json"});
+          res.end(JSON.stringify({response: response}));
+        }).catch(function(e) {
+          res.writeHead(200, {"Content-Type":"application/json"});
+          res.end(JSON.stringify({response: "Sorry, I ran into an error: " + e.message}));
+        });
+      } catch(e) {
+        res.writeHead(400, {"Content-Type":"application/json"});
+        res.end(JSON.stringify({error:"Invalid JSON"}));
+      }
+    });
+    return;
+  }
+
   if (path === "/health") {
     res.writeHead(200, {"Content-Type":"application/json"});
     res.end(JSON.stringify({status:"healthy",version:"7.0.0",time:new Date().toISOString()}));
@@ -560,6 +825,7 @@ const server = http.createServer(function(reqHttp, res) {
 });
 
 server.listen(PORT, function() {
-  console.log("IT Knowledge Agent v9.0 running on port " + PORT);
+  console.log("IT Knowledge Agent v10.0 running on port " + PORT);
+console.log("Web chat UI: /chat");
   console.log("MCP SSE endpoint: /sse");
 });
