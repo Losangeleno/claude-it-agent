@@ -682,10 +682,10 @@ button:active{background:#005a9e}
 <div class="chips">
   <span class="chip" onclick="ask(this.textContent)">Non-compliant devices</span>
   <span class="chip" onclick="ask(this.textContent)">M365 service health</span>
-  <span class="chip" onclick="ask(this.textContent)">Search KB for VPN issues</span>
-  <span class="chip" onclick="ask(this.textContent)">List enrolled devices</span>
-  <span class="chip" onclick="ask(this.textContent)">Cisco switch troubleshooting</span>
-  <span class="chip" onclick="ask(this.textContent)">HP printer offline fix</span>
+  <span class="chip" onclick="ask(this.textContent)">Step-by-step: reset Windows 11 network</span>
+  <span class="chip" onclick="ask(this.textContent)">Script: flush DNS on Windows 11</span>
+  <span class="chip" onclick="ask(this.textContent)">Cisco switch port not working steps</span>
+  <span class="chip" onclick="ask(this.textContent)">Fujitsu ScanSnap Windows 11 driver setup</span>
 </div>
   </div>
 </div>
@@ -770,16 +770,95 @@ const server = http.createServer(function(reqHttp, res) {
           msgLower.includes("hp ")||msgLower.includes("laserjet")||msgLower.includes("elitebook")||msgLower.includes("hewlett")?"hp":
           msgLower.includes("apple")||msgLower.includes("macbook")||msgLower.includes("iphone")||msgLower.includes("ipad")||msgLower.includes("macos")?"apple":null;
 
-        function readAndRespond(files, prefix) {
-          if (files.length > 0 && files[0].driveId && files[0].id) {
-            return handleTool("read_file", {drive_id: files[0].driveId, item_id: files[0].id}).then(function(fileResult) {
-              var fileText = fileResult.content && fileResult.content[0] && fileResult.content[0].text || "";
-              var excerpt = fileText.substring(0, 1500);
-              var response = (prefix||"") + "📄 " + files[0].name.replace(".md","").replace(/-/g," ") + "\n\n" + excerpt + (fileText.length > 1500 ? "\n\n[Ask me to continue for more details...]" : "");
-              res.writeHead(200, {"Content-Type":"application/json"});
-              res.end(JSON.stringify({response: response}));
+        // ── Smart article processor ──────────────────────────────────────────
+        function processArticle(articleText, question) {
+          var q = (question||"").toLowerCase();
+          var wantsScript = /script|powershell|command|cmd|terminal|bash|automat/i.test(q);
+          var wantsGUI = /gui|interface|click|step.by.step|how do i|walk me|show me how/i.test(q);
+
+          // Extract code blocks
+          var codeBlocks = [];
+          var codeRx = /```[\w]*\n?([\s\S]*?)```/g;
+          var cm;
+          while ((cm = codeRx.exec(articleText)) !== null && codeBlocks.length < 3) {
+            if (cm[1].trim().length > 10) codeBlocks.push(cm[1].trim());
+          }
+
+          // Split into sections by markdown headers
+          var sections = [];
+          var curSection = {title:"", lines:[]};
+          articleText.split("\n").forEach(function(line) {
+            if (/^#{1,3}\s+/.test(line)) {
+              if (curSection.lines.length) sections.push(curSection);
+              curSection = {title: line.replace(/^#+\s+/,""), lines:[]};
+            } else { curSection.lines.push(line); }
+          });
+          if (curSection.lines.length) sections.push(curSection);
+
+          // Score sections by relevance to question keywords
+          var keywords = q.replace(/[^\w\s]/g,"").split(/\s+/).filter(function(w){return w.length>3;});
+          var scored = sections.map(function(s) {
+            var txt = (s.title+" "+s.lines.join(" ")).toLowerCase();
+            var score = keywords.reduce(function(a,kw){return a+(txt.includes(kw)?2:0);},0);
+            // Bonus for sections with numbered steps
+            if (/\d+\.\s+/.test(s.lines.join(" "))) score += 3;
+            if (/(step|procedure|instruction|how to)/i.test(s.title)) score += 4;
+            if (wantsScript && /(script|powershell|command|terminal|bash)/i.test(s.title)) score += 5;
+            if (wantsGUI && /(gui|interface|portal|console|click|navigate)/i.test(s.title)) score += 5;
+            return {s:s, score:score};
+          }).sort(function(a,b){return b.score-a.score;});
+
+          var response = "";
+
+          // Script mode — lead with code
+          if (wantsScript && codeBlocks.length > 0) {
+            response += "💻 Script / Command Line:\n\n";
+            codeBlocks.slice(0,2).forEach(function(c,i){
+              response += (i>0?"---\n":"")+c+"\n\n";
             });
           }
+
+          // Add top relevant sections as step-by-step
+          var added = 0;
+          scored.slice(0, wantsScript?2:4).forEach(function(item) {
+            if (added >= 3) return;
+            var s = item.s;
+            var content = s.lines.join("\n")
+              .replace(/\*\*(.*?)\*\*/g,"$1")
+              .replace(/`([^`\n]+)`/g,"$1")
+              .replace(/^>\s*/gm,"")
+              .replace(/\[([^\]]+)\]\([^)]+\)/g,"$1")
+              .trim();
+            if (!content || content.length < 30) return;
+            if (s.title) response += "\n📌 "+s.title+"\n";
+            response += content.substring(0,900)+"\n";
+            added++;
+          });
+
+          // If GUI mode and no script shown yet, append a script option at end
+          if (!wantsScript && codeBlocks.length > 0) {
+            response += "\n\n💻 Script alternative:\n"+codeBlocks[0].substring(0,600);
+          }
+
+          return response.trim().substring(0,3500) + (response.length>3500 ? "\n\n[Reply 'continue' for more details]" : "");
+        }
+
+        function readAndRespond(files, prefix) {
+          // Read top 2 articles and combine
+          var topFiles = files.slice(0,2).filter(function(f){return f.driveId&&f.id;});
+          if (!topFiles.length) return null;
+          return Promise.all(topFiles.map(function(f){
+            return handleTool("read_file",{drive_id:f.driveId,item_id:f.id}).then(function(r){
+              return {name:f.name, text:r.content&&r.content[0]&&r.content[0].text||""};
+            });
+          })).then(function(articles) {
+            var combined = articles.map(function(a){return a.text;}).join("\n\n---\n\n");
+            var processed = processArticle(combined, message);
+            var sources = articles.map(function(a){return "• "+a.name.replace(".md","").replace(/-/g," ");}).join("\n");
+            var response = (prefix||"")+"📚 Sources:\n"+sources+"\n\n"+processed;
+            res.writeHead(200,{"Content-Type":"application/json"});
+            res.end(JSON.stringify({response:response}));
+          });
         }
 
         handleTool(route.tool, route.args).then(function(result) {
