@@ -1,0 +1,34 @@
+{
+  "definition": {
+    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+    "triggers": {
+      "manual": {
+        "type": "Request",
+        "kind": "Http",
+        "inputs": { "schema": {} }
+      }
+    },
+    "actions": {
+      "Call_IT_Agent": {
+        "type": "Http",
+        "inputs": {
+          "method": "POST",
+          "uri": "https://claude-it-agent.whitestone-6cbe99bc.eastus.azurecontainerapps.io/chat",
+          "headers": { "Content-Type": "application/json" },
+          "body": { "message": "@{triggerBody()?['text']}" }
+        }
+      },
+      "Reply_to_Teams": {
+        "type": "Http",
+        "runAfter": { "Call_IT_Agent": ["Succeeded"] },
+        "inputs": {
+          "method": "POST",
+          "uri": "https://claudeitagent.webhook.office.com/webhookb2/1dede829-35a4-4d2b-96d4-ab4687aa13a5@e876d5db-a9f8-4e71-abc1-dcee4d8b0578/IncomingWebhook/a5405b78e76940f1b4175bfac7486426/11d7d5c6-f55b-47ef-85e8-f9d17941e2a1/V2Wba6PgaYn13xB5CHkZ8cZsICUrVnSI-PhIA1U2qADrk1",
+          "headers": { "Content-Type": "application/json" },
+          "body": { "text": "@{body('Call_IT_Agent')?['response']}" }
+        }
+      }
+    },
+    "outputs": {}
+  }
+}
