@@ -945,9 +945,16 @@ const server = http.createServer(function(reqHttp, res) {
         // ── Focused search term for vendor queries ───────────────────────────
         var focusedSearchTerm = message;
         if (detectedVendor === "fujitsu") focusedSearchTerm = "fujitsu scansnap driver windows";
-        else if (detectedVendor === "cisco") focusedSearchTerm = "cisco " + (msgLower.includes("anyconnect")?"anyconnect vpn":msgLower.includes("phone")?"phone installation":"switch troubleshooting");
+        else if (detectedVendor === "cisco") {
+          if (msgLower.includes("anyconnect")||msgLower.includes("vpn")) focusedSearchTerm = "cisco anyconnect vpn";
+          else if (workflowType === "cisco_phone" || msgLower.includes("phone")) focusedSearchTerm = "RB-010 cisco phone installation";
+          else focusedSearchTerm = "cisco switch troubleshooting";
+        }
         else if (detectedVendor === "dell") focusedSearchTerm = "dell " + (msgLower.includes("boot")?"boot troubleshooting":"hardware diagnostics");
         else if (detectedVendor === "hp") focusedSearchTerm = "hp " + (msgLower.includes("print")?"printer setup":"hardware support");
+        // Workflow queries — search directly in Runbooks by article ID
+        if (workflowType === "cisco_phone") focusedSearchTerm = "RB-010 cisco phone installation";
+        if (workflowType === "autopilot") focusedSearchTerm = "RB-011 autopilot deployment";
 
         // ── Build and send final response with optional OneNote link ─────────
         function sendResponse(text, confidence) {
