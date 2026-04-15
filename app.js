@@ -38,12 +38,14 @@ const API_KEY = process.env.MCP_API_KEY || "claudeITAgent2026";
 
 // ── Vendor support site configuration ────────────────────────────────────────
 const VENDOR_SITES = {
-  cisco:   { domain: "cisco.com",         searchPath: "/c/en/us/search/index.html?query=", label: "Cisco Support" },
-  dell:    { domain: "dell.com",           searchPath: "/support/home/search?query=",       label: "Dell Support" },
-  hp:      { domain: "support.hp.com",     searchPath: "/us-en/search#q=",                 label: "HP Support" },
-  hpe:     { domain: "support.hpe.com",    searchPath: "/hpesc/public/api/document/",      label: "HPE Support" },
-  fujitsu: { domain: "support.fujitsu.com",searchPath: "/sp/support/",                    label: "Fujitsu Support" },
-  apple:   { domain: "support.apple.com",   searchPath: "/",                               label: "Apple Support" }
+  cisco:     { domain: "cisco.com",              searchPath: "/c/en/us/search/index.html?query=", label: "Cisco Support" },
+  dell:      { domain: "dell.com",               searchPath: "/support/home/search?query=",       label: "Dell Support" },
+  hp:        { domain: "support.hp.com",         searchPath: "/us-en/search#q=",                 label: "HP Support" },
+  hpe:       { domain: "support.hpe.com",        searchPath: "/hpesc/public/api/document/",      label: "HPE Support" },
+  fujitsu:   { domain: "support.fujitsu.com",    searchPath: "/sp/support/",                     label: "Fujitsu Support" },
+  apple:     { domain: "support.apple.com",      searchPath: "/",                                label: "Apple Support" },
+  logitech:  { domain: "support.logi.com",       searchPath: "/hc/en-us/search?utf8=%E2%9C%93&query=", label: "Logitech Support" },
+  microsoft: { domain: "support.microsoft.com",  searchPath: "/en-us/search?query=",             label: "Microsoft Support" }
 };
 
 // Vendor-specific DDG search (site-scoped) → parse top URLs → fetch content
@@ -752,6 +754,7 @@ function formatChatResponse(toolName, rawText) {
 }
 
 // ── Chat HTML UI ──────────────────────────────────────────────────────────────
+var DEMO_CODE='ITAgent2026Demo';
 var CHAT_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -783,16 +786,39 @@ button:active{background:#005a9e}
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:#2a2d3e;border-radius:4px}
+#gate{position:fixed;inset:0;background:#0f1117;display:flex;align-items:center;justify-content:center;z-index:999;flex-direction:column;gap:20px;padding:24px}
+#gate-box{background:#1e2130;border:1px solid #2a2d3e;border-radius:20px;padding:36px 32px;max-width:420px;width:100%;text-align:center}
+#gate-box h2{font-size:22px;font-weight:700;margin-bottom:8px;color:#fff}
+#gate-box p{font-size:14px;color:#9ca3af;margin-bottom:24px;line-height:1.6}
+#gate-code{width:100%;padding:13px 18px;border-radius:12px;border:1px solid #2a2d3e;background:#0f1117;color:#e8eaf0;font-size:16px;text-align:center;outline:none;margin-bottom:14px;letter-spacing:2px}
+#gate-code:focus{border-color:#0078d4}
+#gate-btn{width:100%;padding:13px;border-radius:12px;border:none;background:#0078d4;color:#fff;font-size:16px;font-weight:700;cursor:pointer}
+#gate-btn:hover{background:#106ebe}
+#gate-err{color:#f87171;font-size:13px;margin-top:8px;display:none}
+.badge{display:inline-block;padding:4px 12px;background:#0078d415;border:1px solid #0078d440;border-radius:20px;font-size:12px;color:#60a5fa;margin-bottom:16px}
 </style>
 </head>
 <body>
+<div id="gate">
+  <div id="gate-box">
+    <div class="badge">🔧 Live Demo</div>
+    <h2>Claude IT Support Agent</h2>
+    <p>An AI-powered IT support system built on Microsoft Azure, SharePoint, and Anthropic Claude. Ask any IT question and get instant step-by-step guidance.</p>
+    <input id="gate-code" type="password" placeholder="Enter access code" onkeydown="if(event.key==='Enter')checkCode()">
+    <button id="gate-btn" onclick="checkCode()">Access Demo</button>
+    <div id="gate-err">Incorrect access code. Please try again.</div>
+  </div>
+</div>
 <header>
   <div class="dot"></div>
   <h1>🔧 IT Agent</h1>
   <span>Field Support</span>
 </header>
 <div id="msgs">
-  <div class="bubble agent">Hi! I'm your IT Knowledge Agent. Ask me anything — devices, users, KB articles, service health, or vendor troubleshooting.
+  <div class="bubble agent">Welcome to the Claude IT Support Agent demo!
+I can answer IT questions, retrieve step-by-step procedures from the knowledge base, check Microsoft 365 service health, look up devices and users, and create field tech workflow checklists.
+
+Try one of the suggested questions below or ask your own.
 <div class="chips">
   <span class="chip" onclick="ask(this.textContent)">Cisco phone install workflow</span>
   <span class="chip" onclick="ask(this.textContent)">Autopilot new device setup</span>
@@ -809,6 +835,18 @@ button:active{background:#005a9e}
 </footer>
 <script>
 var API_KEY='claudeITAgent2026';
+var DEMO_ACCESS='ITAgent2026Demo';
+function checkCode(){
+  var v=document.getElementById('gate-code').value.trim();
+  if(v===DEMO_ACCESS){
+    document.getElementById('gate').style.display='none';
+    sessionStorage.setItem('demo_auth','1');
+  } else {
+    document.getElementById('gate-err').style.display='block';
+    document.getElementById('gate-code').style.borderColor='#f87171';
+  }
+}
+if(sessionStorage.getItem('demo_auth')==='1'){document.getElementById('gate').style.display='none';}
 function ask(t){document.getElementById('inp').value=t;send()}
 function send(){
   var inp=document.getElementById('inp');
@@ -977,6 +1015,8 @@ const server = http.createServer(function(reqHttp, res) {
           msgLower.includes("cisco")||msgLower.includes("catalyst")||msgLower.includes("anyconnect")?"cisco":
           msgLower.includes("dell")||msgLower.includes("optiplex")||msgLower.includes("latitude")||msgLower.includes("idrac")?"dell":
           msgLower.includes("hp ")||msgLower.includes("laserjet")||msgLower.includes("elitebook")||msgLower.includes("hewlett")?"hp":
+          msgLower.includes("logitech")||msgLower.includes("logi")||msgLower.includes("mx keys")||msgLower.includes("mx master")||msgLower.includes("unifying")?"logitech":
+          msgLower.includes("microsoft mouse")||msgLower.includes("microsoft keyboard")||msgLower.includes("surface keyboard")||msgLower.includes("arc mouse")||msgLower.includes("sculpt")?"microsoft":
           msgLower.includes("apple")||msgLower.includes("macbook")||msgLower.includes("iphone")||msgLower.includes("ipad")||msgLower.includes("macos")?"apple":null;
 
         // ── Smart article processor ──────────────────────────────────────────
@@ -1146,7 +1186,9 @@ const server = http.createServer(function(reqHttp, res) {
 
         // ── Focused search term for vendor queries ───────────────────────────
         var focusedSearchTerm = message;
-        if (detectedVendor === "fujitsu") focusedSearchTerm = "fujitsu scansnap driver windows";
+        if (detectedVendor === "logitech") focusedSearchTerm = "logitech " + (msgLower.includes("bluetooth")?"bluetooth pairing":msgLower.includes("unifying")?"unifying receiver":msgLower.includes("driver")?"driver download windows":msgLower.includes("not working")?"troubleshooting":"setup windows");
+        else if (detectedVendor === "microsoft") focusedSearchTerm = "microsoft " + (msgLower.includes("bluetooth")?"bluetooth keyboard mouse pairing windows":msgLower.includes("driver")?"peripheral driver update":"wireless keyboard mouse troubleshooting");
+        else if (detectedVendor === "fujitsu") focusedSearchTerm = "fujitsu scansnap driver windows";
         else if (detectedVendor === "cisco") {
           if (msgLower.includes("anyconnect")||msgLower.includes("vpn")) focusedSearchTerm = "cisco anyconnect vpn";
           else if (workflowType === "cisco_phone" || msgLower.includes("phone")) focusedSearchTerm = "RB-010 cisco phone installation";
