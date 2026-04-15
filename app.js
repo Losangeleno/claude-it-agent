@@ -756,10 +756,12 @@ function send(){
   inp.value='';
   addBubble(msg,'user');
   var loader=addBubble('Thinking...','agent loading');
-  fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+API_KEY},body:JSON.stringify({message:msg})})
-    .then(function(r){return r.json()})
-    .then(function(d){loader.remove();addBubble(d.response||'No response','agent')})
-    .catch(function(e){loader.remove();addBubble('Error: '+e.message,'agent')});
+  var controller=new AbortController();
+  var timeout=setTimeout(function(){controller.abort();},90000);
+  fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+API_KEY},body:JSON.stringify({message:msg}),signal:controller.signal})
+    .then(function(r){clearTimeout(timeout);return r.json();})
+    .then(function(d){loader.remove();addBubble(d.response||'No response','agent');})
+    .catch(function(e){clearTimeout(timeout);loader.remove();addBubble(e.name==='AbortError'?'Request timed out — please try again':'Error: '+e.message,'agent');});
 }
 function addBubble(text,cls){
   var d=document.createElement('div');
