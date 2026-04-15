@@ -905,8 +905,98 @@ const server = http.createServer(function(reqHttp, res) {
 
           // KB auto-synced from Learn — search again immediately and read result
           if (route.tool === "search_kb" && rawText.includes("Auto-synced")) {
-            // Also trigger vendor sync in parallel if vendor detected
             var vendorSync = detectedVendor
               ? handleTool("sync_vendor_docs", {vendor: detectedVendor, topic: message, library: "Troubleshooting", max_articles: 2})
               : Promise.resolve(null);
-            return vendorSync.then(f
+            return vendorSync.then(function() {
+              return handleTool("search_kb", {query: message});
+            }).then(function(r2) {
+              var t2 = r2.content && r2.content[0] && r2.content[0].text || "";
+              if (t2.startsWith("[")) {
+                try {
+                  var files2 = JSON.parse(t2);
+                  if (files2.length > 0) return readAndRespond(files2, "");
+                } catch(e) {}
+              }
+              // Fallback — auto-synced but re-search still empty: format as MEDIUM CONFIDENCE
+              var fallback = "[MEDIUM CONFIDENCE]\nArticle ID: N/A | Category: General IT | Severity: Low\n\n";
+              fallback += "📝 NOTE: No existing KB article found. The following content was auto-synced from Microsoft Learn.\n\n";
+              fallback += rawText;
+              fallback += "\n\nEscalation: If this does not resolve your issue, raise a ticket at https://itportal.yourorg.com or call ext. 1234.";
+              fallback += "\n\nSource: Microsoft Learn (auto-synced — no KB article found)";
+              res.writeHead(200, {"Content-Type":"application/json"});
+              res.end(JSON.stringify({response: fallback}));
+            });
+          }
+
+          // For vendor queries — also search KB for vendor articles
+          if (detectedVendor && route.tool === "search_kb" && rawText.includes("No results")) {
+            return handleTool("sync_vendor_docs", {vendor: detectedVendor, topic: message, library: "Troubleshooting", max_articles: 3}).then(function() {
+              return handleTool("search_kb", {query: message});
+            }).then(function(r2) {
+              var t2 = r2.content && r2.content[0] && r2.content[0].text || "";
+              if (t2.startsWith("[")) {
+                try {
+                  var files2 = JSON.parse(t2);
+                  if (files2.length > 0) return readAndRespond(files2, "");
+                } catch(e) {}
+              }
+              var vendorFallback = "[LOW CONFIDENCE]\nArticle ID: N/A | Category: Hardware | Severity: Low\n\n";
+              vendorFallback += "I could not find a specific KB article for this issue. I searched Microsoft Learn and " + detectedVendor.toUpperCase() + " support but could not find specific content for: " + message + "\n\n";
+              vendorFallback += "I recommend raising a support ticket at https://itportal.yourorg.com\n\n";
+              vendorFallback += "Source: General IT best practice (no KB article found)";
+              res.writeHead(200, {"Content-Type":"application/json"});
+              res.end(JSON.stringify({response: vendorFallback}));
+            });
+          }
+
+          var response = formatChatResponse(route.tool, rawText);
+          res.writeHead(200, {"Content-Type":"application/json"});
+          res.end(JSON.stringify({response: response}));
+        }).catch(function(e) {
+          res.writeHead(200, {"Content-Type":"application/json"});
+          res.end(JSON.stringify({response: "Sorry, I ran into an error: " + e.message}));
+        });
+      } catch(e) {
+        res.writeHead(400, {"Content-Type":"application/json"});
+        res.end(JSON.stringify({error:"Invalid JSON"}));
+      }
+    });
+    return;
+  }
+
+  if (path === "/health") {
+    res.writeHead(200, {"Content-Type":"application/json"});
+    res.end(JSON.stringify({status:"healthy",version:"10.0.0",time:new Date().toISOString()}));
+    return;
+  }
+  // Legacy REST endpoint
+  if (path === "/query" && reqHttp.method === "POST") {
+    var b = "";
+    reqHttp.on("data", function(c) { b += c; });
+    reqHttp.on("end", function() {
+      try {
+        var data = JSON.parse(b);
+        handleTool(data.action || "search_kb", data.params || {}).then(function(result) {
+          res.writeHead(200, {"Content-Type":"application/json"});
+          res.end(JSON.stringify({success:true,result:result.content[0].text}));
+        }).catch(function(e) {
+          res.writeHead(500, {"Content-Type":"application/json"});
+          res.end(JSON.stringify({success:false,error:e.message}));
+        });
+      } catch(e) {
+        res.writeHead(400, {"Content-Type":"application/json"});
+        res.end(JSON.stringify({success:false,error:"Invalid JSON"}));
+      }
+    });
+    return;
+  }
+  res.writeHead(200, {"Content-Type":"application/json"});
+  res.end(JSON.stringify({name:"IT Knowledge Agent",version:"8.0.0",status:"running",endpoints:["/sse","/message","/health","/query","/sync"]}));
+});
+
+server.listen(PORT, function() {
+  console.log("IT Knowledge Agent v10.0 running on port " + PORT);
+console.log("Web chat UI: /chat");
+  console.log("MCP SSE endpoint: /sse");
+});

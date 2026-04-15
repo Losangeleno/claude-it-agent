@@ -99,7 +99,11 @@ var TOOLS=[
   {name:"list_teams",description:"List all Microsoft Teams in the organisation",inputSchema:{type:"object",properties:{}}},
   {name:"list_channels",description:"List all channels in a Microsoft Team",inputSchema:{type:"object",properties:{team_id:{type:"string",description:"Team object ID (get from list_teams)"}},required:["team_id"]}},
   {name:"get_channel_messages",description:"Read recent messages from a Teams channel",inputSchema:{type:"object",properties:{team_id:{type:"string"},channel_id:{type:"string"},limit:{type:"number",description:"Number of messages (default 10)"}},required:["team_id","channel_id"]}},
-  {name:"send_channel_message",description:"Post a message to a Microsoft Teams channel — supports plain text or HTML",inputSchema:{type:"object",properties:{team_id:{type:"string"},channel_id:{type:"string"},message:{type:"string",description:"Message content"},html:{type:"boolean",description:"Set true to send as HTML (default false)"}},required:["team_id","channel_id","message"]}}
+  {name:"send_channel_message",description:"Post a message to a Microsoft Teams channel — supports plain text or HTML",inputSchema:{type:"object",properties:{team_id:{type:"string"},channel_id:{type:"string"},message:{type:"string",description:"Message content"},html:{type:"boolean",description:"Set true to send as HTML (default false)"}},required:["team_id","channel_id","message"]}},
+
+  // ── OneNote Workflows ─────────────────────────────────────────
+  {name:"create_workflow",description:"Create a step-by-step IT workflow page in OneNote with checkboxes for field techs. Use for tasks like Cisco phone install, Autopilot setup, network config, etc. Generates a checklist page in the IT Workflows notebook that techs can follow on mobile and tick off as they go.",inputSchema:{type:"object",properties:{title:{type:"string",description:"Workflow title, e.g. 'Cisco Phone Install — Site A'"},task_type:{type:"string",description:"Task category: 'cisco_phone', 'autopilot', 'network', 'printer', 'custom'"},steps:{type:"array",items:{type:"object",properties:{heading:{type:"string"},items:{type:"array",items:{type:"string"}}}},description:"Array of sections, each with a heading and checklist items. If omitted, uses the built-in template for the task_type."},tech_name:{type:"string",description:"Name of the field tech assigned to this job"},site:{type:"string",description:"Site or location name"},notes:{type:"string",description:"Any additional notes or special instructions for this job"}},required:["title","task_type"]}},
+  {name:"list_workflows",description:"List all IT workflow pages in the OneNote IT Workflows notebook",inputSchema:{type:"object",properties:{task_type:{type:"string",description:"Filter by task type section (optional): cisco_phone, autopilot, network, printer, custom"}}}}
 ];
 
 function handleTool(name,args){
@@ -107,7 +111,7 @@ function handleTool(name,args){
   if(name==="list_library"){return getDrives().then(function(drives){var drive=drives.find(function(d){return d.name.toLowerCase()===args.library.toLowerCase();});if(!drive)return{content:[{type:"text",text:"Available: "+drives.map(function(d){return d.name;}).join(", ")}]};return graph("/drives/"+drive.id+"/root/children").then(function(d){return{content:[{type:"text",text:JSON.stringify((d.value||[]).map(function(f){return{name:f.name,id:f.id,driveId:drive.id};}),null,2)}]};})});}
   if(name==="read_file"){return graph("/drives/"+args.drive_id+"/items/"+args.item_id).then(function(meta){var url=meta["@microsoft.graph.downloadUrl"];if(!url)return{content:[{type:"text",text:"Cannot download."}]};var u=new URL(url);return new Promise(function(resolve,reject){https.get({hostname:u.hostname,path:u.pathname+u.search},function(res){var d="";res.on("data",function(c){d+=c;});res.on("end",function(){resolve({content:[{type:"text",text:d.substring(0,8000)}]});});}).on("error",reject);});});}
   if(name==="ms_service_health"){var p=args&&args.service?"/admin/serviceAnnouncement/issues?$filter=status ne 'resolved' and contains(service,'"+args.service+"')":"/admin/serviceAnnouncement/issues?$filter=status ne 'resolved'&$top=10";return graph(p).then(function(d){var issues=(d.value||[]).map(function(i){return{title:i.title,service:i.service,status:i.status,severity:i.classification};});return{content:[{type:"text",text:issues.length?"Active issues:\n"+JSON.stringify(issues,null,2):"All Microsoft 365 services healthy!"}]};});}
-  if(name==="ms_maintenance"){return graph("/admin/serviceAnnouncement/messages?$filter=messageType eq 'planForChange'&$top=5").then(function(d){var msgs=(d.value||[]).map(function(m){return{title:m.title,services:m.services,published:m.publishedDateTime};});return{content:[{type:"text",text:msgs.length?JSON.stringify(msgs,null,2):"No upcoming planned maintenance."}]};});}
+  if(name==="ms_maintenance"){return graph("/admin/serviceAnnouncement/messages?$filter=messageType%20eq%20%27planForChange%27&$top=5").then(function(d){var msgs=(d.value||[]).map(function(m){return{title:m.title,services:m.services,published:m.publishedDateTime};});return{content:[{type:"text",text:msgs.length?JSON.stringify(msgs,null,2):"No upcoming planned maintenance."}]};});}
   if(name==="cisco_advisories"){return getCiscoToken().then(function(t){return req({hostname:"apix.cisco.com",path:"/security/advisories/v2/product?product="+encodeURIComponent(args.product),method:"GET",headers:{Authorization:"Bearer "+t,Accept:"application/json"}});}).then(function(r){var a=(r.body.advisories||[]).slice(0,5).map(function(a){return{title:a.advisoryTitle,severity:a.sir,cves:a.cves,published:a.publishedOn};});return{content:[{type:"text",text:a.length?JSON.stringify(a,null,2):"No advisories for: "+args.product}]};}).catch(function(e){return{content:[{type:"text",text:"Cisco error: "+e.message}]};});}
   if(name==="cisco_cve"){return getCiscoToken().then(function(t){return req({hostname:"apix.cisco.com",path:"/security/advisories/v2/cve/"+encodeURIComponent(args.cve),method:"GET",headers:{Authorization:"Bearer "+t,Accept:"application/json"}});}).then(function(r){return{content:[{type:"text",text:JSON.stringify(r.body,null,2)}]};}).catch(function(e){return{content:[{type:"text",text:"CVE error: "+e.message}]};});}
   if(name==="search_microsoft_learn"){return req({hostname:"learn.microsoft.com",path:"/api/search?search="+encodeURIComponent(args.query)+"&locale=en-us&$top=5",method:"GET",headers:{Accept:"application/json"}}).then(function(r){var results=(r.body.results||[]).map(function(i){return{title:i.title,url:i.url,description:i.description};});return{content:[{type:"text",text:results.length?JSON.stringify(results,null,2):"No results for: "+args.query}]};}).catch(function(e){return{content:[{type:"text",text:"MS Learn error: "+e.message}]};});}
@@ -343,6 +347,121 @@ function handleTool(name,args){
     });
   }
 
+  // ── OneNote Workflows ─────────────────────────────────────────
+  if(name==="create_workflow"||name==="list_workflows"){
+    var ONENOTE_NOTEBOOK="IT Workflows";
+    var SECTION_MAP={cisco_phone:"Cisco Phone Installs",autopilot:"Autopilot Deployments",network:"Network Configuration",printer:"Printer Setup",custom:"Custom Workflows"};
+    var TEMPLATES={
+      cisco_phone:[
+        {heading:"Pre-Installation Checks",items:["Unbox phone and verify model against work order","Confirm MAC address matches deployment sheet","Check PoE switch port is active and tagged to voice VLAN","Verify DHCP scope has available IPs for voice VLAN","Confirm CUCM/UCM has device profile ready for this MAC"]},
+        {heading:"Physical Installation",items:["Mount phone bracket on wall or place on desk","Connect ethernet cable from phone to PoE switch port","Connect handset and headset if required","Power on and confirm boot screen appears","Note the IP address displayed during boot"]},
+        {heading:"Phone Registration",items:["Confirm phone auto-registers in CUCM","Verify correct extension (DN) is assigned","Test internal call — dial another extension","Test external call — dial out via PSTN","Confirm voicemail button routes correctly"]},
+        {heading:"Configuration and Features",items:["Set correct time zone and date/time","Configure speed dials as per user request","Test intercom and call pickup group if configured","Verify BLF keys are working if applicable","Label phone with extension number and user name"]},
+        {heading:"Sign-Off",items:["User has confirmed phone is working","Photo taken of installed phone and cable run","Work order updated with MAC, IP, extension, and location","Any issues logged in ticket before closing"]}
+      ],
+      autopilot:[
+        {heading:"Pre-Deployment Checks",items:["Confirm device serial number matches Autopilot import","Verify device is registered in Intune / Autopilot portal","Confirm Autopilot profile is assigned to device or group","Check Wi-Fi or ethernet is available at deployment site","Confirm user M365 licence is active and assigned"]},
+        {heading:"Hardware Setup",items:["Unbox device and connect to power","Connect ethernet cable if Wi-Fi not available for OOBE","Do NOT join to local domain — leave for Autopilot","Power on device and wait for Windows OOBE screen","Select region, keyboard layout, confirm network connection"]},
+        {heading:"Autopilot Enrollment",items:["At sign-in screen, enter user corporate email address","Wait for Autopilot profile to download","Confirm Setting up for your organisation message appears","Device will restart and apply policies — do NOT interrupt","Wait for all apps to install via Company Portal"]},
+        {heading:"Account and Policy Verification",items:["Sign in as end user and confirm MFA prompt completes","Verify OneDrive sync begins automatically","Confirm Outlook connects and mailbox loads","Check Microsoft Teams launches with correct account","Verify VPN client is installed and connects"]},
+        {heading:"Peripherals and Final Config",items:["Install and test required peripherals (monitor, dock, printer)","Map required network drives per user role","Confirm all required apps installed from Company Portal","Run Windows Update and install pending updates","Set wallpaper and accessibility settings per user preference"]},
+        {heading:"Sign-Off",items:["User has signed in and confirmed device is working","Intune compliance status shows Compliant","Device name noted in work order","Old device collected or decommission ticket raised if applicable"]}
+      ]
+    };
+
+    function ensureOnenoteNotebook(){
+      return getGraphToken().then(function(t){
+        return req({hostname:"graph.microsoft.com",path:"/v1.0/me/onenote/notebooks",method:"GET",headers:{Authorization:"Bearer "+t,Accept:"application/json"}});
+      }).then(function(r){
+        var nb=(r.body.value||[]).find(function(n){return n.displayName===ONENOTE_NOTEBOOK;});
+        if(nb)return nb.id;
+        return getGraphToken().then(function(t){
+          var b=JSON.stringify({displayName:ONENOTE_NOTEBOOK});
+          return req({hostname:"graph.microsoft.com",path:"/v1.0/me/onenote/notebooks",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":Buffer.byteLength(b)}},b);
+        }).then(function(r){return r.body.id;});
+      });
+    }
+
+    function ensureOnenoteSection(notebookId,sectionName){
+      return getGraphToken().then(function(t){
+        return req({hostname:"graph.microsoft.com",path:"/v1.0/me/onenote/notebooks/"+notebookId+"/sections",method:"GET",headers:{Authorization:"Bearer "+t,Accept:"application/json"}});
+      }).then(function(r){
+        var sec=(r.body.value||[]).find(function(s){return s.displayName===sectionName;});
+        if(sec)return sec.id;
+        return getGraphToken().then(function(t){
+          var b=JSON.stringify({displayName:sectionName});
+          return req({hostname:"graph.microsoft.com",path:"/v1.0/me/onenote/notebooks/"+notebookId+"/sections",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":Buffer.byteLength(b)}},b);
+        }).then(function(r){return r.body.id;});
+      });
+    }
+
+    if(name==="list_workflows"){
+      return ensureOnenoteNotebook().then(function(nbId){
+        return getGraphToken().then(function(t){
+          return req({hostname:"graph.microsoft.com",path:"/v1.0/me/onenote/notebooks/"+nbId+"/sections",method:"GET",headers:{Authorization:"Bearer "+t,Accept:"application/json"}});
+        }).then(function(r){
+          var sections=(r.body.value||[]);
+          return Promise.all(sections.map(function(s){
+            return getGraphToken().then(function(t){
+              return req({hostname:"graph.microsoft.com",path:"/v1.0/me/onenote/sections/"+s.id+"/pages?$select=title,createdDateTime",method:"GET",headers:{Authorization:"Bearer "+t,Accept:"application/json"}});
+            }).then(function(pr){return{section:s.displayName,pages:(pr.body.value||[]).map(function(p){return{title:p.title,created:p.createdDateTime};})};});
+          }));
+        }).then(function(results){
+          var out=results.filter(function(r){return r.pages.length>0;}).map(function(r){
+            return"Section: "+r.section+":\n"+r.pages.map(function(p){return"  - "+p.title+" ("+new Date(p.created).toLocaleDateString()+")";}).join("\n");
+          }).join("\n\n");
+          return{content:[{type:"text",text:out||"No workflow pages found yet. Use create_workflow to add the first one."}]};
+        });
+      }).catch(function(e){return{content:[{type:"text",text:"list_workflows error: "+e.message}]};});
+    }
+
+    if(name==="create_workflow"){
+      var taskType=args.task_type||"custom";
+      var sectionName=SECTION_MAP[taskType]||"Custom Workflows";
+      var steps=args.steps||(TEMPLATES[taskType]||[{heading:"Steps",items:["Add your steps here"]}]);
+      var now=new Date();
+      var dateStr=now.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
+
+      var htmlBody="<!DOCTYPE html><html><head><title>"+args.title+"</title></head><body>";
+      htmlBody+="<h1>"+args.title+"</h1>";
+      htmlBody+="<p><b>Date:</b> "+dateStr+" &nbsp; <b>Tech:</b> "+(args.tech_name||"—")+" &nbsp; <b>Site:</b> "+(args.site||"—")+"</p>";
+      if(args.notes)htmlBody+="<p><b>Notes:</b> "+args.notes+"</p>";
+      htmlBody+="<p><b>Status:</b> In Progress</p><hr/>";
+
+      steps.forEach(function(section){
+        htmlBody+="<h2>"+section.heading+"</h2>";
+        (section.items||[]).forEach(function(item){
+          htmlBody+="<p data-tag=\"to-do\">"+item+"</p>";
+        });
+      });
+
+      htmlBody+="<h2>Field Notes</h2><p>&nbsp;</p><p>&nbsp;</p>";
+      htmlBody+="<h2>Job Complete Checklist</h2>";
+      htmlBody+="<p data-tag=\"to-do\">All steps completed and verified with user/site contact</p>";
+      htmlBody+="<p data-tag=\"to-do\">Photo evidence taken and ready to upload</p>";
+      htmlBody+="<p data-tag=\"to-do\">Completion message posted to Teams IT channel</p>";
+      htmlBody+="</body></html>";
+
+      return ensureOnenoteNotebook().then(function(nbId){
+        return ensureOnenoteSection(nbId,sectionName).then(function(secId){
+          return getGraphToken().then(function(t){
+            var pageData=Buffer.from(htmlBody,"utf8");
+            return new Promise(function(resolve,reject){
+              var r=https.request({hostname:"graph.microsoft.com",path:"/v1.0/me/onenote/sections/"+secId+"/pages",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/xhtml+xml","Content-Length":pageData.length}},function(re){var d="";re.on("data",function(c){d+=c;});re.on("end",function(){try{resolve({status:re.statusCode,body:JSON.parse(d)});}catch(e){resolve({status:re.statusCode,body:d});}});});
+              r.on("error",reject);r.write(pageData);r.end();
+            });
+          }).then(function(r){
+            if(r.status===201||r.status===200){
+              var pageUrl=(r.body.links&&r.body.links.oneNoteWebUrl&&r.body.links.oneNoteWebUrl.href)||"";
+              return{content:[{type:"text",text:"Workflow created: "+args.title+"\nSection: "+sectionName+"\nOpen in OneNote: "+pageUrl+"\n\nShare this link with the field tech. They can tick checkboxes on mobile as they complete each step. When the job is done they should post to the Teams IT channel."}]};
+            }
+            return{content:[{type:"text",text:"Workflow creation failed (HTTP "+r.status+"): "+JSON.stringify(r.body)}]};
+          });
+        });
+      }).catch(function(e){return{content:[{type:"text",text:"create_workflow error: "+e.message}]};});
+    }
+  }
+
   return Promise.resolve({content:[{type:"text",text:"Unknown tool: "+name}]});
 }
 
@@ -376,7 +495,7 @@ function handle(msg) {
     send({jsonrpc:"2.0",id:msg.id,result:{
       protocolVersion:"2025-11-25",
       capabilities:{tools:{listChanged:false}},
-      serverInfo:{name:"it-knowledge-agent",version:"6.0.0"}
+      serverInfo:{name:"it-knowledge-agent",version:"7.0.0"}
     }});
   } else if (msg.method === "notifications/initialized") {
     // no response
@@ -395,4 +514,4 @@ function handle(msg) {
   }
 }
 
-process.stderr.write("IT Knowledge Agent v6.0 started\n");
+process.stderr.write("IT Knowledge Agent v7.0 started\n");
