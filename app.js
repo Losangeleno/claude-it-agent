@@ -850,8 +850,126 @@ const server = http.createServer(function(reqHttp, res) {
           return response.trim().substring(0,3500) + (response.length>3500 ? "\n\n[Reply 'continue' for more details]" : "");
         }
 
-        function readAndRespond(files, prefix) {
-          // Read top 2 articles and combine
+        // ── Detect workflow type for OneNote auto-creation ───────────────────
+        var workflowType = null;
+        var workflowTitle = null;
+        if (/cisco.*(phone|ip phone|7800|8800|8900)|phone.*(install|setup|deploy)/i.test(message)) {
+          workflowType = "cisco_phone";
+          workflowTitle = "Cisco Phone Install — " + new Date().toLocaleDateString("en-GB");
+        } else if (/autopilot|new.*(laptop|computer|device|pc)|enroll.*device|deploy.*computer/i.test(message)) {
+          workflowType = "autopilot";
+          workflowTitle = "Autopilot Deployment — " + new Date().toLocaleDateString("en-GB");
+        } else if (/printer.*(setup|install|config)|install.*printer/i.test(message)) {
+          workflowType = "printer";
+          workflowTitle = "Printer Setup — " + new Date().toLocaleDateString("en-GB");
+        } else if (/network.*(config|setup)|switch.*(config|setup|port)|wifi.*(setup|config)/i.test(message)) {
+          workflowType = "network";
+          workflowTitle = "Network Configuration — " + new Date().toLocaleDateString("en-GB");
+        }
+
+        // ── OneNote workflow creator ─────────────────────────────────────────
+        var ONENOTE_USER = "manueltucker@claudeitagent.onmicrosoft.com";
+        var ONENOTE_NOTEBOOK = "IT Workflows";
+        var SECTION_MAP = {cisco_phone:"Cisco Phone Installs",autopilot:"Autopilot Deployments",network:"Network Configuration",printer:"Printer Setup",custom:"Custom Workflows"};
+        var WORKFLOW_TEMPLATES = {
+          cisco_phone:[
+            {heading:"Pre-Installation Checks",items:["Unbox phone and verify model against work order","Confirm MAC address matches deployment sheet","Check PoE switch port is active and tagged to voice VLAN","Verify DHCP scope has available IPs for voice VLAN","Confirm CUCM device profile is ready for this MAC"]},
+            {heading:"Physical Installation",items:["Mount bracket and place phone","Connect ethernet cable to PoE switch port","Connect handset and headset if required","Power on and confirm boot screen appears","Note the IP address displayed during boot"]},
+            {heading:"Phone Registration",items:["Confirm phone registers in CUCM","Verify correct extension (DN) is assigned","Test internal call — confirm audio both ways","Test external call via PSTN","Confirm voicemail button routes correctly"]},
+            {heading:"Configuration",items:["Set correct time zone and date/time","Configure speed dials as requested","Test intercom and call pickup group","Verify BLF keys if applicable","Label phone with extension and user name"]},
+            {heading:"Sign-Off",items:["User confirmed phone is working","Photo taken of installation","Work order updated with MAC, IP, extension, location","Post completion to Teams IT channel"]}
+          ],
+          autopilot:[
+            {heading:"Pre-Deployment Checks",items:["Confirm serial number is registered in Autopilot","Verify Autopilot profile is assigned","Confirm user M365 licence is active","Check Wi-Fi or ethernet available on site","Confirm user MFA is configured"]},
+            {heading:"Hardware Setup",items:["Unbox and connect to power","Connect ethernet if Wi-Fi not available","Power on and wait for OOBE screen","Select region and keyboard layout","Confirm network connection shown"]},
+            {heading:"Autopilot Enrollment",items:["Enter user corporate email address","Wait for Autopilot profile to download","Confirm organisation branding appears","Complete MFA when prompted","Do NOT interrupt — wait for policies to apply"]},
+            {heading:"Verification",items:["Confirm OneDrive sync starts automatically","Open Outlook and confirm mailbox loads","Open Teams and confirm correct account","Connect VPN and confirm it works","Check Intune compliance shows Compliant"]},
+            {heading:"Sign-Off",items:["User confirmed device is working","Intune shows Compliant","Device name recorded in work order","Old device collected if applicable","Post completion to Teams IT channel"]}
+          ]
+        };
+
+        function createOnenoteWorkflow(wfType, wfTitle) {
+          var sectionName = SECTION_MAP[wfType] || "Custom Workflows";
+          var steps = WORKFLOW_TEMPLATES[wfType] || [{heading:"Steps",items:["Complete task steps here"]}];
+          var dateStr = new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
+          var html = "<!DOCTYPE html><html><head><title>"+wfTitle+"</title></head><body>";
+          html += "<h1>"+wfTitle+"</h1>";
+          html += "<p><b>Date:</b> "+dateStr+" | <b>Status:</b> In Progress</p><hr/>";
+          steps.forEach(function(s){
+            html += "<h2>"+s.heading+"</h2>";
+            (s.items||[]).forEach(function(item){ html += "<p data-tag=\"to-do\">"+item+"</p>"; });
+          });
+          html += "<h2>Job Complete</h2>";
+          html += "<p data-tag=\"to-do\">All steps completed and verified</p>";
+          html += "<p data-tag=\"to-do\">Post completion message to Teams IT channel</p>";
+          html += "</body></html>";
+
+          // Ensure notebook exists
+          return getGraphToken().then(function(t){
+            return req({hostname:"graph.microsoft.com",path:"/v1.0/users/"+encodeURIComponent(ONENOTE_USER)+"/onenote/notebooks",method:"GET",headers:{Authorization:"Bearer "+t,Accept:"application/json"}});
+          }).then(function(r){
+            var nb=(r.body.value||[]).find(function(n){return n.displayName===ONENOTE_NOTEBOOK;});
+            if(nb) return nb.id;
+            return getGraphToken().then(function(t){
+              var b=JSON.stringify({displayName:ONENOTE_NOTEBOOK});
+              return req({hostname:"graph.microsoft.com",path:"/v1.0/users/"+encodeURIComponent(ONENOTE_USER)+"/onenote/notebooks",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":Buffer.byteLength(b)}},b);
+            }).then(function(r){return r.body.id;});
+          }).then(function(nbId){
+            // Ensure section exists
+            return getGraphToken().then(function(t){
+              return req({hostname:"graph.microsoft.com",path:"/v1.0/users/"+encodeURIComponent(ONENOTE_USER)+"/onenote/notebooks/"+nbId+"/sections",method:"GET",headers:{Authorization:"Bearer "+t,Accept:"application/json"}});
+            }).then(function(r){
+              var sec=(r.body.value||[]).find(function(s){return s.displayName===sectionName;});
+              if(sec) return sec.id;
+              return getGraphToken().then(function(t){
+                var b=JSON.stringify({displayName:sectionName});
+                return req({hostname:"graph.microsoft.com",path:"/v1.0/users/"+encodeURIComponent(ONENOTE_USER)+"/onenote/notebooks/"+nbId+"/sections",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":Buffer.byteLength(b)}},b);
+              }).then(function(r){return r.body.id;});
+            });
+          }).then(function(secId){
+            return getGraphToken().then(function(t){
+              var pageData=Buffer.from(html,"utf8");
+              return new Promise(function(resolve,reject){
+                var r=https.request({hostname:"graph.microsoft.com",path:"/v1.0/users/"+encodeURIComponent(ONENOTE_USER)+"/onenote/sections/"+secId+"/pages",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/xhtml+xml","Content-Length":pageData.length}},function(re){var d="";re.on("data",function(c){d+=c;});re.on("end",function(){try{resolve({status:re.statusCode,body:JSON.parse(d)});}catch(e){resolve({status:re.statusCode,body:d});}});});
+                r.on("error",reject);r.write(pageData);r.end();
+              });
+            }).then(function(r){
+              if(r.status===201||r.status===200){
+                return (r.body.links&&r.body.links.oneNoteWebUrl&&r.body.links.oneNoteWebUrl.href)||"";
+              }
+              return "";
+            });
+          }).catch(function(){return "";});
+        }
+
+        // ── Focused search term for vendor queries ───────────────────────────
+        var focusedSearchTerm = message;
+        if (detectedVendor === "fujitsu") focusedSearchTerm = "fujitsu scansnap driver windows";
+        else if (detectedVendor === "cisco") focusedSearchTerm = "cisco " + (msgLower.includes("anyconnect")?"anyconnect vpn":msgLower.includes("phone")?"phone installation":"switch troubleshooting");
+        else if (detectedVendor === "dell") focusedSearchTerm = "dell " + (msgLower.includes("boot")?"boot troubleshooting":"hardware diagnostics");
+        else if (detectedVendor === "hp") focusedSearchTerm = "hp " + (msgLower.includes("print")?"printer setup":"hardware support");
+
+        // ── Build and send final response with optional OneNote link ─────────
+        function sendResponse(text, confidence) {
+          var conf = confidence || "HIGH";
+          var onenotePromise = workflowType
+            ? createOnenoteWorkflow(workflowType, workflowTitle)
+            : Promise.resolve("");
+
+          onenotePromise.then(function(oneNoteUrl) {
+            var finalResponse = "[" + conf + " CONFIDENCE]\n" + text;
+            if (oneNoteUrl) {
+              finalResponse += "\n\n---\n📋 OneNote Workflow Created\nA step-by-step checklist has been created for your field tech:\n" + oneNoteUrl + "\nShare this link with the tech — they can tick each step on their phone as they go.";
+            }
+            res.writeHead(200, {"Content-Type":"application/json"});
+            res.end(JSON.stringify({response: finalResponse}));
+          }).catch(function() {
+            res.writeHead(200, {"Content-Type":"application/json"});
+            res.end(JSON.stringify({response: "[" + conf + " CONFIDENCE]\n" + text}));
+          });
+        }
+
+        function readAndRespond(files, confidence) {
           var topFiles = files.slice(0,2).filter(function(f){return f.driveId&&f.id;});
           if (!topFiles.length) return null;
           return Promise.all(topFiles.map(function(f){
@@ -861,14 +979,10 @@ const server = http.createServer(function(reqHttp, res) {
           })).then(function(articles) {
             var combined = articles.map(function(a){return a.text;}).join("\n\n---\n\n");
             var processed = processArticle(combined, message);
-
-            // Build Article ID from filename (e.g. kb-001-password-reset.md → KB-001)
             var firstName = articles[0].name || "";
             var articleIdMatch = firstName.match(/^(kb|rb)-?(\d+)/i);
             var articleId = articleIdMatch ? articleIdMatch[1].toUpperCase()+"-"+articleIdMatch[2].padStart(3,"0") : "KB";
-            var articleTitle = firstName.replace(/\.md$/i,"").replace(/^(kb|rb)-?\d+-?/i,"").replace(/-/g," ").replace(/\b\w/g,function(c){return c.toUpperCase();}) || firstName.replace(".md","");
-
-            // Detect category from content or filename
+            var articleTitle = firstName.replace(/\.md$/i,"").replace(/^(kb|rb)-?\d+-?/i,"").replace(/-/g," ").replace(/\b\w/g,function(c){return c.toUpperCase();});
             var contentLower = combined.toLowerCase();
             var category = contentLower.includes("password")||contentLower.includes("account")?"Account Access":
               contentLower.includes("vpn")||contentLower.includes("wifi")||contentLower.includes("network")?"Network & Connectivity":
@@ -877,76 +991,66 @@ const server = http.createServer(function(reqHttp, res) {
               contentLower.includes("outlook")||contentLower.includes("email")?"Email & Communication":
               contentLower.includes("phish")||contentLower.includes("ransomware")||contentLower.includes("security")?"Security":
               contentLower.includes("print")?"Printing":"IT Operations";
-
             var severity = contentLower.includes("critical")||contentLower.includes("ransomware")||contentLower.includes("phish")?"Critical":
               contentLower.includes("warning")||contentLower.includes("urgent")?"High":"Low";
 
-            var response = "[HIGH CONFIDENCE]\n";
-            response += "Article ID: "+articleId+" | Category: "+category+" | Severity: "+severity+"\n\n";
-            response += (prefix||"");
-            response += processed;
-            response += "\n\nSource: "+articleId+" — "+articleTitle;
-
-            res.writeHead(200,{"Content-Type":"application/json"});
-            res.end(JSON.stringify({response:response}));
+            var text = "Article ID: "+articleId+" | Category: "+category+" | Severity: "+severity+"\n\n";
+            text += processed;
+            text += "\n\nSource: "+articleId+" — "+articleTitle;
+            sendResponse(text, confidence||"HIGH");
           });
         }
 
         handleTool(route.tool, route.args).then(function(result) {
           var rawText = result.content && result.content[0] && result.content[0].text || "";
 
-          // KB returned file list — read top article immediately
+          // KB returned file list — read immediately
           if (route.tool === "search_kb" && rawText.startsWith("[")) {
             try {
               var files = JSON.parse(rawText);
-              if (files.length > 0) return readAndRespond(files, "");
+              if (files.length > 0) return readAndRespond(files, "HIGH");
             } catch(e) {}
           }
 
-          // KB auto-synced from Learn — search again immediately and read result
-          if (route.tool === "search_kb" && rawText.includes("Auto-synced")) {
+          // KB auto-synced from Learn OR vendor detected — sync vendor docs then re-search with focused terms
+          if (route.tool === "search_kb" && (rawText.includes("Auto-synced") || rawText.includes("No results"))) {
             var vendorSync = detectedVendor
-              ? handleTool("sync_vendor_docs", {vendor: detectedVendor, topic: message, library: "Troubleshooting", max_articles: 2})
+              ? handleTool("sync_vendor_docs", {vendor:detectedVendor, topic:focusedSearchTerm, library:"Troubleshooting", max_articles:3})
               : Promise.resolve(null);
             return vendorSync.then(function() {
-              return handleTool("search_kb", {query: message});
+              // Search with focused term first, then fall back to original message
+              return handleTool("search_kb", {query: focusedSearchTerm});
             }).then(function(r2) {
               var t2 = r2.content && r2.content[0] && r2.content[0].text || "";
               if (t2.startsWith("[")) {
                 try {
                   var files2 = JSON.parse(t2);
-                  if (files2.length > 0) return readAndRespond(files2, "");
+                  if (files2.length > 0) return readAndRespond(files2, rawText.includes("Auto-synced") ? "MEDIUM" : "HIGH");
                 } catch(e) {}
               }
-              // Fallback — auto-synced but re-search still empty: format as MEDIUM CONFIDENCE
-              var fallback = "[MEDIUM CONFIDENCE]\nArticle ID: N/A | Category: General IT | Severity: Low\n\n";
-              fallback += "📝 NOTE: No existing KB article found. The following content was auto-synced from Microsoft Learn.\n\n";
-              fallback += rawText;
-              fallback += "\n\nEscalation: If this does not resolve your issue, raise a ticket at https://itportal.yourorg.com or call ext. 1234.";
-              fallback += "\n\nSource: Microsoft Learn (auto-synced — no KB article found)";
-              res.writeHead(200, {"Content-Type":"application/json"});
-              res.end(JSON.stringify({response: fallback}));
-            });
-          }
-
-          // For vendor queries — also search KB for vendor articles
-          if (detectedVendor && route.tool === "search_kb" && rawText.includes("No results")) {
-            return handleTool("sync_vendor_docs", {vendor: detectedVendor, topic: message, library: "Troubleshooting", max_articles: 3}).then(function() {
-              return handleTool("search_kb", {query: message});
-            }).then(function(r2) {
-              var t2 = r2.content && r2.content[0] && r2.content[0].text || "";
-              if (t2.startsWith("[")) {
-                try {
-                  var files2 = JSON.parse(t2);
-                  if (files2.length > 0) return readAndRespond(files2, "");
-                } catch(e) {}
-              }
-              var vendorFallback = "[LOW CONFIDENCE]\nArticle ID: N/A | Category: Hardware | Severity: Low\n\n";
-              vendorFallback += "I could not find a specific KB article for this issue. I searched Microsoft Learn and " + detectedVendor.toUpperCase() + " support but could not find specific content for: " + message + "\n\n";
-              vendorFallback += "I recommend raising a support ticket at https://itportal.yourorg.com\n\n";
-              vendorFallback += "Source: General IT best practice (no KB article found)";
-              res.writeHead(200, {"Content-Type":"application/json"});
-              res.end(JSON.stringify({response: vendorFallback}));
+              // Try original message as fallback search
+              return handleTool("search_kb", {query: message}).then(function(r3) {
+                var t3 = r3.content && r3.content[0] && r3.content[0].text || "";
+                if (t3.startsWith("[")) {
+                  try {
+                    var files3 = JSON.parse(t3);
+                    if (files3.length > 0) return readAndRespond(files3, "MEDIUM");
+                  } catch(e) {}
+                }
+                // Final fallback — nothing found anywhere
+                var text = "Article ID: N/A | Category: " + (detectedVendor ? detectedVendor.toUpperCase()+" Hardware" : "General IT") + " | Severity: Low\n\n";
+                text += "I could not find a specific KB article for this topic.\n\n";
+                if (detectedVendor) {
+                  text += "📝 NOTE: I searched the KB and " + detectedVendor.toUpperCase() + " support documentation but could not find a direct match for: " + message + "\n\n";
+                  text += "Steps to resolve:\n";
+                  text += "1. Visit the manufacturer support site directly\n";
+                  text += "2. Search for your exact model number and Windows version\n";
+                  text += "3. Download the latest driver from the official site\n\n";
+                }
+                text += "Escalation: Raise a ticket at https://itportal.yourorg.com or call ext. 1234\n\n";
+                text += "Source: General IT best practice (no KB article found)";
+                sendResponse(text, "LOW");
+              });
             });
           }
 
