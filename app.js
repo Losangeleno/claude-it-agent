@@ -687,12 +687,12 @@ button:active{background:#005a9e}
 <div id="msgs">
   <div class="bubble agent">Hi! I'm your IT Knowledge Agent. Ask me anything — devices, users, KB articles, service health, or vendor troubleshooting.
 <div class="chips">
-  <span class="chip" onclick="ask(this.textContent)">Non-compliant devices</span>
+  <span class="chip" onclick="ask(this.textContent)">Cisco phone install workflow</span>
+  <span class="chip" onclick="ask(this.textContent)">Autopilot new device setup</span>
+  <span class="chip" onclick="ask(this.textContent)">How do I reset my Active Directory password</span>
+  <span class="chip" onclick="ask(this.textContent)">VPN not connecting</span>
+  <span class="chip" onclick="ask(this.textContent)">Printer not showing up</span>
   <span class="chip" onclick="ask(this.textContent)">M365 service health</span>
-  <span class="chip" onclick="ask(this.textContent)">Step-by-step: reset Windows 11 network</span>
-  <span class="chip" onclick="ask(this.textContent)">Script: flush DNS on Windows 11</span>
-  <span class="chip" onclick="ask(this.textContent)">Cisco switch port not working steps</span>
-  <span class="chip" onclick="ask(this.textContent)">Fujitsu ScanSnap Windows 11 driver setup</span>
 </div>
   </div>
 </div>
