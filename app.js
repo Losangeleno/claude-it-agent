@@ -466,6 +466,68 @@ function handleTool(name, args) {
     }).catch(function(e){return{content:[{type:"text",text:"create_workflow error: "+e.message}]};});
   }
 
+  // ── Microsoft Lists workflow ─────────────────────────────────────────────
+  if(name==="create_list_workflow"){
+    var listTitle=args.title||"IT Workflow";
+    var taskType=args.task_type||"custom";
+    var techName=args.tech_name||"Field Tech";
+    var site=args.site||"";
+    var WORKFLOW_STEPS={
+      cisco_phone:["Unbox phone and verify model matches work order","Confirm MAC address matches deployment sheet","Check PoE switch port is active and tagged to voice VLAN","Confirm CUCM device profile ready for this MAC","Mount bracket and connect ethernet cable to PoE port","Connect handset cable and power on phone","Confirm phone registers in CUCM","Verify correct extension shown on screen","Test internal call — audio both directions","Test external call via PSTN","Set correct time zone in Settings > User Preferences","Configure speed dials per user request","Label phone with extension and user name","User confirmed phone is working","Photo taken and work order updated","Post completion to Teams IT channel"],
+      autopilot:["Confirm serial number registered in Intune/Autopilot","Verify Autopilot profile assigned to device","Confirm user M365 licence is active","Check network available at site","Unbox device and connect to power","Power on and wait for OOBE screen","Select region and keyboard layout","Enter user corporate email address","Wait for Autopilot profile to download","Complete MFA when prompted","Wait for all policies to apply — do NOT interrupt","Confirm OneDrive sync starts","Open Outlook — confirm mailbox loads","Open Teams — confirm correct account","Connect VPN — confirm it works","Check Intune compliance shows Compliant","Run Windows Update","User confirmed device working","Device serial recorded in work order","Post completion to Teams IT channel"]
+    };
+    var steps=args.steps||(WORKFLOW_STEPS[taskType]||["Complete task steps"]);
+
+    return getSiteId().then(function(siteId){
+      // Create Microsoft List
+      var listBody=JSON.stringify({
+        displayName:listTitle,
+        description:"IT workflow checklist for "+techName+(site?" at "+site:""),
+        list:{template:"genericList"},
+        columns:[
+          {name:"Step",text:{allowMultipleLines:false},required:true},
+          {name:"Complete",boolean:{},required:false},
+          {name:"Notes",text:{allowMultipleLines:true},required:false}
+        ]
+      });
+      return getSPToken().then(function(t){
+        return new Promise(function(resolve,reject){
+          var d=Buffer.from(listBody,"utf8");
+          var r=require("https").request({hostname:"graph.microsoft.com",path:"/v1.0/sites/"+siteId+"/lists",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":d.length}},function(re){var s="";re.on("data",function(c){s+=c;});re.on("end",function(){try{resolve(JSON.parse(s));}catch(e){resolve({error:s});}});});
+          r.on("error",reject);r.write(d);r.end();
+        });
+      }).then(function(list){
+        if(list.error||!list.id)return{content:[{type:"text",text:"List creation failed: "+JSON.stringify(list)}]};
+        var listId=list.id;
+        var listUrl=list.webUrl||"";
+        // Add each step as a list item
+        return getSPToken().then(function(t){
+          return steps.reduce(function(p,step,i){
+            return p.then(function(){
+              var itemBody=JSON.stringify({fields:{Step:(i+1)+". "+step,Complete:false,Notes:""}});
+              var d2=Buffer.from(itemBody,"utf8");
+              return new Promise(function(resolve,reject){
+                var r=require("https").request({hostname:"graph.microsoft.com",path:"/v1.0/sites/"+siteId+"/lists/"+listId+"/items",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":d2.length}},function(re){var s="";re.on("data",function(c){s+=c;});re.on("end",function(){resolve();});});
+                r.on("error",reject);r.write(d2);r.end();
+              });
+            });
+          },Promise.resolve());
+        }).then(function(){
+          // Post Teams message with the list link
+          var teamsMsg=JSON.stringify({"@type":"MessageCard","@context":"http://schema.org/extensions","themeColor":"0076D7","summary":listTitle,"sections":[{"activityTitle":"Workflow Created: "+listTitle,"activitySubtitle":"Tech: "+techName+(site?" | Site: "+site:"")+" | Steps: "+steps.length,"facts":[{"name":"Status","value":"In Progress"},{"name":"Access","value":"Open on mobile via Teams > Lists tab"}],"markdown":true}],"potentialAction":[{"@type":"OpenUri","name":"Open Checklist","targets":[{"os":"default","uri":listUrl}]}]});
+          var wUrl=new URL(TEAMS_WEBHOOK_URL);
+          var d3=Buffer.from(teamsMsg,"utf8");
+          return new Promise(function(resolve){
+            var r=require("https").request({hostname:wUrl.hostname,path:wUrl.pathname+wUrl.search,method:"POST",headers:{"Content-Type":"application/json","Content-Length":d3.length}},function(re){resolve(re.statusCode);});
+            r.on("error",function(){resolve(0);});r.write(d3);r.end();
+          }).then(function(){
+            return{content:[{type:"text",text:"Workflow checklist created: "+listTitle+"\n\nSharePoint List URL: "+listUrl+"\n\nThe checklist has been posted to the Teams IT channel. Field tech can open it on mobile via Teams > Lists tab or the link above.\n\nSteps added: "+steps.length}]};
+          });
+        });
+      });
+    }).catch(function(e){return{content:[{type:"text",text:"create_list_workflow error: "+e.message}]};});
+  }
+
   return Promise.resolve({content:[{type:"text",text:"Unknown tool: "+name}]});
 }
 
@@ -792,7 +854,8 @@ var CLAUDE_TOOLS_API = [
   {name:"cisco_advisories",description:"Search Cisco PSIRT security advisories by product.",input_schema:{type:"object",properties:{product:{type:"string"}},required:["product"]}},
   {name:"web_search",description:"Search the web for IT information when KB has no results.",input_schema:{type:"object",properties:{query:{type:"string"}},required:["query"]}},
   {name:"send_email",description:"Send an email with IT guidance, documents, checklists or reports. Default recipient is manueltucker@gmail.com unless specified otherwise. Always use is_html:true for rich formatting. Send full article content when emailing KB articles.",input_schema:{type:"object",properties:{to:{type:"string",description:"Recipient email — default: manueltucker@gmail.com"},subject:{type:"string",description:"Email subject"},body:{type:"string",description:"Full HTML email body with all content"},is_html:{type:"boolean",description:"Always set to true"}},required:["to","subject","body"]}},
-  {name:"create_workflow",description:"Create a step-by-step IT workflow checklist in OneNote for a field tech. Use for: Cisco phone installs (cisco_phone), Autopilot deployments (autopilot), printer setup (printer), network config (network). Returns a OneNote link the tech can open on mobile.",input_schema:{type:"object",properties:{title:{type:"string",description:"Workflow title e.g. Cisco Phone Install - Site A"},task_type:{type:"string",description:"One of: cisco_phone, autopilot, printer, network, custom"},tech_name:{type:"string",description:"Field tech name"},site:{type:"string",description:"Site or location name"},notes:{type:"string",description:"Any special instructions"}},required:["title","task_type"]}}
+  {name:"create_workflow",description:"Create a step-by-step IT workflow checklist in OneNote for a field tech. Use for: Cisco phone installs (cisco_phone), Autopilot deployments (autopilot), printer setup (printer), network config (network). Returns a OneNote link the tech can open on mobile.",input_schema:{type:"object",properties:{title:{type:"string",description:"Workflow title e.g. Cisco Phone Install - Site A"},task_type:{type:"string",description:"One of: cisco_phone, autopilot, printer, network, custom"},tech_name:{type:"string",description:"Field tech name"},site:{type:"string",description:"Site or location name"},notes:{type:"string",description:"Any special instructions"}},required:["title","task_type"]}},
+  {name:"create_list_workflow",description:"Create an interactive IT workflow checklist in Microsoft Lists. Field tech can tick off steps on mobile via Teams Lists tab. Use this for Cisco phone installs, Autopilot deployments, or any field job. Posts the checklist link to the Teams IT channel automatically.",input_schema:{type:"object",properties:{title:{type:"string",description:"Checklist title e.g. Cisco Phone Install - Site A - Tech Name"},task_type:{type:"string",description:"One of: cisco_phone, autopilot, printer, network, custom"},tech_name:{type:"string",description:"Name of the field tech assigned"},site:{type:"string",description:"Site or location name"},steps:{type:"array",items:{type:"string"},description:"Custom steps — leave empty to use the built-in template for the task_type"}},required:["title","task_type"]}}
 ];
 
 function callAnthropicAPI(messages) {
