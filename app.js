@@ -421,6 +421,52 @@ function handleTool(name, args) {
 
   if(name==="build_scenario"){return handleTool("search_kb",{query:args.problem}).then(function(kb){return Promise.all([Promise.resolve(kb),handleTool("ms_service_health",{}),handleTool("search_microsoft_learn",{query:args.problem})]);}).then(function(results){var now=new Date().toISOString().split("T")[0];var md="# Field Scenario: "+args.problem+"\n\n_Generated: "+now+"_\n\n";md+="## KB Results\n\n"+results[0].content[0].text+"\n\n";md+="## M365 Health\n\n"+results[1].content[0].text+"\n\n";md+="## Microsoft Learn\n\n"+results[2].content[0].text;return{content:[{type:"text",text:md}]};});}
 
+  // ── create_workflow ───────────────────────────────────────────────────────
+  if(name==="create_workflow"){
+    var wfTitle=args.title||"IT Workflow";
+    var wfType=args.task_type||"custom";
+    var wfSection={cisco_phone:"Cisco Phone Installs",autopilot:"Autopilot Deployments",printer:"Printer Setup",network:"Network Configuration",custom:"Custom Workflows"}[wfType]||"Custom Workflows";
+    var wfTemplates={
+      cisco_phone:[["Pre-Installation Checks",["Unbox phone and verify model matches work order","Confirm MAC address matches deployment sheet","Check PoE switch port is active and tagged to voice VLAN","Confirm DHCP scope has available IPs on voice VLAN","Confirm CUCM device profile ready for this MAC"]],["Physical Installation",["Mount bracket and place phone","Connect ethernet cable to PoE switch port","Connect handset cable to phone base","Power on and confirm boot screen appears","Note IP address displayed during boot"]],["Phone Registration",["Confirm phone registers in CUCM","Verify correct extension shown on screen","Test internal call — audio both directions","Test external call via PSTN","Confirm voicemail routes correctly"]],["Configuration",["Set correct time zone (Settings > User Preferences)","Configure speed dials per user request","Test intercom and call pickup group","Verify BLF keys if applicable","Label phone with extension and user name"]],["Sign-Off",["User confirmed phone is working","Photo taken of installation","Work order updated: MAC, IP, extension, switch port, location","Post completion to Teams IT channel"]]],
+      autopilot:[["Pre-Deployment Checks",["Confirm serial number registered in Intune/Autopilot","Verify Autopilot profile assigned to device","Confirm user M365 licence is active","Confirm user MFA configured","Check network available at deployment site"]],["Hardware Setup",["Unbox and connect to power","Power on and wait for OOBE screen","Select region and keyboard layout","Confirm network connection"]],["Autopilot Enrollment",["Enter user corporate email address","Wait for Autopilot profile to download","Confirm organisation branding appears","Complete MFA when prompted","DO NOT interrupt - wait for policies to apply"]],["Account Verification",["Confirm OneDrive sync starts","Open Outlook - confirm mailbox loads","Open Teams - confirm correct account","Connect VPN - confirm it works","Check Intune compliance shows Compliant"]],["Sign-Off",["User confirmed device is working","Intune shows Compliant","Device name and serial in work order","Old device collected if applicable","Post completion to Teams IT channel"]]]
+    };
+    var steps=wfTemplates[wfType]||[["Steps",["Add your steps here"]]];
+    var dateStr=new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
+    var html="<!DOCTYPE html><html><head><title>"+wfTitle+"</title></head><body>";
+    html+="<h1>"+wfTitle+"</h1>";
+    html+="<p><b>Date:</b> "+dateStr+" | <b>Tech:</b> "+(args.tech_name||"___________")+" | <b>Site:</b> "+(args.site||"___________")+"</p>";
+    if(args.notes)html+="<p><b>Notes:</b> "+args.notes+"</p><hr/>";
+    steps.forEach(function(s){
+      html+="<h2>"+s[0]+"</h2>";
+      s[1].forEach(function(item){html+="<p data-tag=\"to-do\">"+item+"</p>";});
+    });
+    html+="<h2>Job Complete</h2>";
+    html+="<p data-tag=\"to-do\">All steps completed and verified</p>";
+    html+="<p data-tag=\"to-do\">Post completion to Teams IT channel</p>";
+    html+="</body></html>";
+    return getSPToken().then(function(t){
+      return new Promise(function(res,rej){var r=require("https").request({hostname:"graph.microsoft.com",path:"/v1.0/sites/claudeitagent.sharepoint.com:/sites/ITKnowledgeBase:/onenote/notebooks",method:"GET",headers:{Authorization:"Bearer "+t,Accept:"application/json"}},function(re){var d="";re.on("data",function(c){d+=c;});re.on("end",function(){try{res(JSON.parse(d));}catch(e){res({value:[]});}});});r.on("error",rej);r.end();});
+    }).then(function(nbs){
+      var nb=(nbs.value||[]).find(function(n){return n.displayName==="IT Workflows";});
+      var nbPromise=nb?Promise.resolve(nb.id):getSPToken().then(function(t){var b=JSON.stringify({displayName:"IT Workflows"});return new Promise(function(res,rej){var r=require("https").request({hostname:"graph.microsoft.com",path:"/v1.0/sites/claudeitagent.sharepoint.com:/sites/ITKnowledgeBase:/onenote/notebooks",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":Buffer.byteLength(b)}},function(re){var d="";re.on("data",function(c){d+=c;});re.on("end",function(){try{res(JSON.parse(d).id);}catch(e){res(null);}});});r.on("error",rej);r.write(b);r.end();});});
+      return nbPromise;
+    }).then(function(nbId){
+      if(!nbId)return{content:[{type:"text",text:"Could not create or find IT Workflows notebook. Please run create-onenote-workflows.ps1 first."}]};
+      return getSPToken().then(function(t){
+        return new Promise(function(res,rej){var b=JSON.stringify({displayName:wfSection});var r=require("https").request({hostname:"graph.microsoft.com",path:"/v1.0/sites/claudeitagent.sharepoint.com:/sites/ITKnowledgeBase:/onenote/notebooks/"+nbId+"/sections",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":Buffer.byteLength(b)}},function(re){var d="";re.on("data",function(c){d+=c;});re.on("end",function(){try{res(JSON.parse(d));}catch(e){res({id:null});}});});r.on("error",rej);r.write(b);r.end();});
+      }).then(function(sec){
+        if(!sec.id)return{content:[{type:"text",text:"Could not create section in notebook."}]};
+        var pageData=Buffer.from(html,"utf8");
+        return getSPToken().then(function(t){
+          return new Promise(function(resolve,reject){
+            var r=require("https").request({hostname:"graph.microsoft.com",path:"/v1.0/sites/claudeitagent.sharepoint.com:/sites/ITKnowledgeBase:/onenote/sections/"+sec.id+"/pages",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/xhtml+xml","Content-Length":pageData.length}},function(re){var d="";re.on("data",function(c){d+=c;});re.on("end",function(){try{var p=JSON.parse(d);var url=p.links&&p.links.oneNoteWebUrl&&p.links.oneNoteWebUrl.href||"";resolve({content:[{type:"text",text:"Workflow created: "+wfTitle+"\nOneNote link: "+url+"\n\nShare this link with your field tech. They can open it on mobile and tick each checkbox as they complete the step."}]});}catch(e){resolve({content:[{type:"text",text:"Page created. Open IT Workflows notebook in OneNote to view."}]});}});});
+            r.on("error",reject);r.write(pageData);r.end();
+          });
+        });
+      });
+    }).catch(function(e){return{content:[{type:"text",text:"create_workflow error: "+e.message}]};});
+  }
+
   return Promise.resolve({content:[{type:"text",text:"Unknown tool: "+name}]});
 }
 
@@ -730,7 +776,7 @@ document.getElementById('inp').focus();
 </html>`;
 
 // ── Claude API integration ────────────────────────────────────────────────────
-var CLAUDE_SYSTEM_PROMPT = "You are an expert IT Support Agent for this organisation. Your primary mission is to assist IT staff and end-users by retrieving accurate, step-by-step information from the internal IT Knowledge Base and Operational Runbooks.\n\nFor ANY IT question, ALWAYS call search_kb first. If it returns file results, call read_file on the top result and base your answer on that content.\n\nEvery response MUST follow this exact format:\n[HIGH CONFIDENCE] or [MEDIUM CONFIDENCE] or [LOW CONFIDENCE]\nArticle ID: KB-XXX or RB-XXX | Category: [Category] | Severity: [Low/Medium/High/Critical]\n\nSummary: One sentence describing what this response covers.\n\nThen provide the full step-by-step procedure with:\n- Numbered steps for sequential procedures\n- Checkboxes [ ] for diagnostic checks\n- Phase headings for multi-phase tasks\n- Callouts: NOTE, WARNING, EXPECTED RESULT, TIP\n\nEvery response must end with:\nSource: [Article ID] - [Article Title]\n\nIf no KB article found, use [LOW CONFIDENCE] and Source: General IT best practice (no KB article found).\n\nEscalation contacts:\n- Security incidents: IT Security hotline ext. 9999 (24/7)\n- Standard failures: IT Service Desk ext. 1234 or https://itportal.yourorg.com";
+var CLAUDE_SYSTEM_PROMPT = "You are an expert IT Support Agent for this organisation. Your primary mission is to assist IT staff and end-users by retrieving accurate, step-by-step information from the internal IT Knowledge Base and Operational Runbooks.\n\nFor ANY IT question, ALWAYS call search_kb first. If it returns file results, call read_file on the top result and base your answer on that content.\n\nEvery response MUST follow this exact format:\n[HIGH CONFIDENCE] or [MEDIUM CONFIDENCE] or [LOW CONFIDENCE]\nArticle ID: KB-XXX or RB-XXX | Category: [Category] | Severity: [Low/Medium/High/Critical]\n\nSummary: One sentence describing what this response covers.\n\nThen provide the full step-by-step procedure with:\n- Numbered steps for sequential procedures\n- Checkboxes [ ] for diagnostic checks\n- Phase headings for multi-phase tasks\n- Callouts: NOTE, WARNING, EXPECTED RESULT, TIP\n\nEvery response must end with:\nSource: [Article ID] - [Article Title]\n\nIf no KB article found, use [LOW CONFIDENCE] and Source: General IT best practice (no KB article found).\n\nEscalation contacts:\n- Security incidents: IT Security hotline ext. 9999 (24/7)\n- Standard failures: IT Service Desk ext. 1234 or https://itportal.yourorg.com\n\nEMAIL INSTRUCTIONS:\n- When the user asks to email anything, ALWAYS use the send_email tool immediately.\n- Default recipient: manueltucker@gmail.com (use this unless told otherwise)\n- Always send as HTML (is_html: true) for rich formatting\n- Format emailed documents with proper HTML: headings, numbered lists, checkboxes as unicode, tables for escalation paths\n- When emailing a KB article or procedure, include the FULL content — all phases, all steps, all callouts\n- Confirm to the user after sending: 'Email sent to manueltucker@gmail.com'\n\nWORKFLOW INSTRUCTIONS:\n- When the user asks to create a workflow, checklist, or job card, use the create_workflow tool\n- Detect task type: cisco_phone for Cisco phone installs, autopilot for new device setup, printer for printer setup, network for network config\n- Always confirm the OneNote link after creation so the tech can open it on mobile";
 
 var CLAUDE_TOOLS_API = [
   {name:"search_kb",description:"Search IT Knowledge Base for scripts, runbooks, FAQs, assets, cabling, or troubleshooting guides. ALWAYS call this first for any IT question.",input_schema:{type:"object",properties:{query:{type:"string",description:"Search query"}},required:["query"]}},
@@ -744,7 +790,8 @@ var CLAUDE_TOOLS_API = [
   {name:"get_sign_in_logs",description:"Get recent Azure AD sign-in logs for a user.",input_schema:{type:"object",properties:{user_id:{type:"string"},limit:{type:"number"}}}},
   {name:"cisco_advisories",description:"Search Cisco PSIRT security advisories by product.",input_schema:{type:"object",properties:{product:{type:"string"}},required:["product"]}},
   {name:"web_search",description:"Search the web for IT information when KB has no results.",input_schema:{type:"object",properties:{query:{type:"string"}},required:["query"]}},
-  {name:"send_email",description:"Send an email with IT guidance or reports.",input_schema:{type:"object",properties:{to:{type:"string"},subject:{type:"string"},body:{type:"string"},is_html:{type:"boolean"}},required:["to","subject","body"]}}
+  {name:"send_email",description:"Send an email with IT guidance, documents, checklists or reports. Default recipient is manueltucker@gmail.com unless specified otherwise. Always use is_html:true for rich formatting. Send full article content when emailing KB articles.",input_schema:{type:"object",properties:{to:{type:"string",description:"Recipient email — default: manueltucker@gmail.com"},subject:{type:"string",description:"Email subject"},body:{type:"string",description:"Full HTML email body with all content"},is_html:{type:"boolean",description:"Always set to true"}},required:["to","subject","body"]}},
+  {name:"create_workflow",description:"Create a step-by-step IT workflow checklist in OneNote for a field tech. Use for: Cisco phone installs (cisco_phone), Autopilot deployments (autopilot), printer setup (printer), network config (network). Returns a OneNote link the tech can open on mobile.",input_schema:{type:"object",properties:{title:{type:"string",description:"Workflow title e.g. Cisco Phone Install - Site A"},task_type:{type:"string",description:"One of: cisco_phone, autopilot, printer, network, custom"},tech_name:{type:"string",description:"Field tech name"},site:{type:"string",description:"Site or location name"},notes:{type:"string",description:"Any special instructions"}},required:["title","task_type"]}}
 ];
 
 function callAnthropicAPI(messages) {
