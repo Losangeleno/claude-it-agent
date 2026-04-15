@@ -729,6 +729,91 @@ document.getElementById('inp').focus();
 </body>
 </html>`;
 
+// ── Claude API integration ────────────────────────────────────────────────────
+var CLAUDE_SYSTEM_PROMPT = "You are an expert IT Support Agent for this organisation. Your primary mission is to assist IT staff and end-users by retrieving accurate, step-by-step information from the internal IT Knowledge Base and Operational Runbooks.\n\nFor ANY IT question, ALWAYS call search_kb first. If it returns file results, call read_file on the top result and base your answer on that content.\n\nEvery response MUST follow this exact format:\n[HIGH CONFIDENCE] or [MEDIUM CONFIDENCE] or [LOW CONFIDENCE]\nArticle ID: KB-XXX or RB-XXX | Category: [Category] | Severity: [Low/Medium/High/Critical]\n\nSummary: One sentence describing what this response covers.\n\nThen provide the full step-by-step procedure with:\n- Numbered steps for sequential procedures\n- Checkboxes [ ] for diagnostic checks\n- Phase headings for multi-phase tasks\n- Callouts: NOTE, WARNING, EXPECTED RESULT, TIP\n\nEvery response must end with:\nSource: [Article ID] - [Article Title]\n\nIf no KB article found, use [LOW CONFIDENCE] and Source: General IT best practice (no KB article found).\n\nEscalation contacts:\n- Security incidents: IT Security hotline ext. 9999 (24/7)\n- Standard failures: IT Service Desk ext. 1234 or https://itportal.yourorg.com";
+
+var CLAUDE_TOOLS_API = [
+  {name:"search_kb",description:"Search IT Knowledge Base for scripts, runbooks, FAQs, assets, cabling, or troubleshooting guides. ALWAYS call this first for any IT question.",input_schema:{type:"object",properties:{query:{type:"string",description:"Search query"}},required:["query"]}},
+  {name:"read_file",description:"Read the full contents of a KB article file. Call this after search_kb returns results to get the full article content.",input_schema:{type:"object",properties:{drive_id:{type:"string"},item_id:{type:"string"}},required:["drive_id","item_id"]}},
+  {name:"list_library",description:"List all files in a specific KB library: Runbooks, FAQs, Troubleshooting, Assets, Scripts, or Cabling.",input_schema:{type:"object",properties:{library:{type:"string"}},required:["library"]}},
+  {name:"ms_service_health",description:"Check live Microsoft 365 service health and active outages.",input_schema:{type:"object",properties:{service:{type:"string"}}}},
+  {name:"ms_maintenance",description:"Get upcoming Microsoft 365 planned maintenance.",input_schema:{type:"object",properties:{}}},
+  {name:"get_user",description:"Get Azure AD user profile by email or object ID.",input_schema:{type:"object",properties:{user_id:{type:"string"}},required:["user_id"]}},
+  {name:"search_users",description:"Search Azure AD users by name or email.",input_schema:{type:"object",properties:{query:{type:"string"},limit:{type:"number"}},required:["query"]}},
+  {name:"get_noncompliant_devices",description:"List non-compliant devices from Intune.",input_schema:{type:"object",properties:{platform:{type:"string"}}}},
+  {name:"get_sign_in_logs",description:"Get recent Azure AD sign-in logs for a user.",input_schema:{type:"object",properties:{user_id:{type:"string"},limit:{type:"number"}}}},
+  {name:"cisco_advisories",description:"Search Cisco PSIRT security advisories by product.",input_schema:{type:"object",properties:{product:{type:"string"}},required:["product"]}},
+  {name:"web_search",description:"Search the web for IT information when KB has no results.",input_schema:{type:"object",properties:{query:{type:"string"}},required:["query"]}},
+  {name:"send_email",description:"Send an email with IT guidance or reports.",input_schema:{type:"object",properties:{to:{type:"string"},subject:{type:"string"},body:{type:"string"},is_html:{type:"boolean"}},required:["to","subject","body"]}}
+];
+
+function callAnthropicAPI(messages) {
+  var body = JSON.stringify({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 4096,
+    system: CLAUDE_SYSTEM_PROMPT,
+    tools: CLAUDE_TOOLS_API,
+    messages: messages
+  });
+  return new Promise(function(resolve, reject) {
+    var r = https.request({
+      hostname: "api.anthropic.com",
+      path: "/v1/messages",
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+        "content-length": Buffer.byteLength(body)
+      }
+    }, function(response) {
+      var d = "";
+      response.on("data", function(c) { d += c; });
+      response.on("end", function() {
+        try { resolve(JSON.parse(d)); } catch(e) { reject(new Error("API parse error: " + d.substring(0,200))); }
+      });
+    });
+    r.on("error", reject);
+    r.write(body);
+    r.end();
+  });
+}
+
+function handleClaudeChat(userMessage) {
+  var messages = [{role:"user", content: userMessage}];
+  function loop(iterations) {
+    if (iterations > 8) return Promise.resolve("I reached the maximum number of steps. Please try rephrasing your question.");
+    return callAnthropicAPI(messages).then(function(response) {
+      if (response.error) return Promise.resolve("API error: " + (response.error.message||JSON.stringify(response.error)));
+      if (response.stop_reason === "end_turn") {
+        var textBlock = (response.content||[]).find(function(c){return c.type==="text";});
+        return Promise.resolve(textBlock ? textBlock.text : "No response generated.");
+      }
+      if (response.stop_reason === "tool_use") {
+        messages.push({role:"assistant", content: response.content});
+        var toolUses = (response.content||[]).filter(function(c){return c.type==="tool_use";});
+        return Promise.all(toolUses.map(function(toolUse) {
+          return handleTool(toolUse.name, toolUse.input).then(function(result) {
+            return {
+              type: "tool_result",
+              tool_use_id: toolUse.id,
+              content: (result.content&&result.content[0]&&result.content[0].text)||"No result"
+            };
+          }).catch(function(e) {
+            return {type:"tool_result", tool_use_id:toolUse.id, content:"Tool error: "+e.message};
+          });
+        })).then(function(toolResults) {
+          messages.push({role:"user", content: toolResults});
+          return loop(iterations + 1);
+        });
+      }
+      var textBlock2 = (response.content||[]).find(function(c){return c.type==="text";});
+      return Promise.resolve(textBlock2 ? textBlock2.text : "Unexpected response from API.");
+    });
+  }
+  return loop(0);
+}
+
 // ── HTTP server ───────────────────────────────────────────────────────────────
 const server = http.createServer(function(reqHttp, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -748,15 +833,6 @@ const server = http.createServer(function(reqHttp, res) {
     return;
   }
   if (path === "/chat" && reqHttp.method === "POST") {
-    if (!checkAuth(reqHttp)) {
-      // For browser clients, check a session cookie or embedded key
-      var authHeader = reqHttp.headers["authorization"] || "";
-      if (authHeader !== "Bearer " + API_KEY) {
-        res.writeHead(401, {"Content-Type":"application/json"});
-        res.end(JSON.stringify({error:"Unauthorized"}));
-        return;
-      }
-    }
     var chatBody = "";
     reqHttp.on("data", function(c) { chatBody += c; });
     reqHttp.on("end", function() {
@@ -768,6 +844,19 @@ const server = http.createServer(function(reqHttp, res) {
           res.end(JSON.stringify({error:"Empty message"}));
           return;
         }
+
+        // ── Claude API integration ────────────────────────────────────────────
+        if (process.env.ANTHROPIC_API_KEY) {
+          handleClaudeChat(message).then(function(response) {
+            res.writeHead(200, {"Content-Type":"application/json"});
+            res.end(JSON.stringify({response: response}));
+          }).catch(function(e) {
+            res.writeHead(200, {"Content-Type":"application/json"});
+            res.end(JSON.stringify({response: "Sorry, I ran into an error: " + e.message}));
+          });
+          return;
+        }
+
         var route = routeChat(message);
         // Detect vendor from message for dual-source lookup
         var msgLower = message.toLowerCase();
