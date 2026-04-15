@@ -830,8 +830,10 @@ function callAnthropicAPI(messages) {
 
 function handleClaudeChat(userMessage) {
   var messages = [{role:"user", content: userMessage}];
+  var startTime = Date.now();
   function loop(iterations) {
-    if (iterations > 8) return Promise.resolve("I reached the maximum number of steps. Please try rephrasing your question.");
+    if (iterations > 4) return Promise.resolve("[LOW CONFIDENCE]\nArticle ID: N/A | Category: General IT | Severity: Low\n\nI searched the knowledge base but could not find a specific article for this query. Please raise a ticket at https://itportal.yourorg.com or call ext. 1234.\n\nSource: General IT best practice (no KB article found)");
+    if (Date.now() - startTime > 55000) return Promise.resolve("[LOW CONFIDENCE]\nArticle ID: N/A | Category: General IT | Severity: Low\n\nRequest timed out while searching. Please try a shorter question or raise a ticket at https://itportal.yourorg.com\n\nSource: General IT best practice");
     return callAnthropicAPI(messages).then(function(response) {
       if (response.error) return Promise.resolve("API error: " + (response.error.message||JSON.stringify(response.error)));
       if (response.stop_reason === "end_turn") {
