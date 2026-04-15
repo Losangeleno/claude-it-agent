@@ -613,26 +613,33 @@ function routeChat(message) {
 
 function formatChatResponse(toolName, rawText) {
   if (!rawText||rawText.trim()==="") return "No response received.";
+
+  // No KB results — LOW CONFIDENCE fallback
+  if (toolName==="search_kb" && (rawText.includes("No results") || rawText.includes("no results"))) {
+    return "[LOW CONFIDENCE]\nArticle ID: N/A | Category: General IT | Severity: Low\n\nI could not find a specific KB article for this issue. Here is my best guidance based on standard IT practice.\n\n"+rawText+"\n\nI recommend raising a support ticket at https://itportal.yourorg.com so this can be formally investigated and potentially added to the KB.\n\nSource: General IT best practice (no KB article found)";
+  }
   // Try to parse JSON for richer formatting
   try {
     var data=JSON.parse(rawText);
-    if(Array.isArray(data)&&data.length===0) return "No results found.";
+    if(Array.isArray(data)&&data.length===0) return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: IT Operations | Severity: Low\n\nNo results found.\n\nSource: Live Azure AD / Intune Data";
     if(Array.isArray(data)) {
       if(toolName==="get_intune_devices"||toolName==="get_noncompliant_devices") {
-        return (toolName==="get_noncompliant_devices"?"⚠️ ":"📱 ")+(data.length)+" device(s) found:\n\n"+data.map(function(d){return "📱 "+d.name+"\n   👤 "+(d.user||d.email||"Unknown")+"\n   💻 "+(d.os||"")+"\n   "+(d.compliance==="compliant"?"✅":"⚠️")+" "+d.compliance+"\n   🕐 Last sync: "+(d.lastSync?new Date(d.lastSync).toLocaleString():"Unknown");}).join("\n\n");
+        var header="[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Device Management | Severity: "+(toolName==="get_noncompliant_devices"?"High":"Low")+"\n\n";
+        var body=(toolName==="get_noncompliant_devices"?"⚠️ ":"📱 ")+(data.length)+" device(s) found:\n\n"+data.map(function(d){return "📱 "+d.name+"\n   👤 "+(d.user||d.email||"Unknown")+"\n   💻 "+(d.os||"")+"\n   "+(d.compliance==="compliant"?"✅":"⚠️")+" "+d.compliance+"\n   🕐 Last sync: "+(d.lastSync?new Date(d.lastSync).toLocaleString():"Unknown");}).join("\n\n");
+        return header+body+"\n\nSource: Live Intune Data";
       }
-      if(toolName==="search_users") return "👥 "+data.length+" user(s) found:\n\n"+data.map(function(u){return "👤 "+u.name+"\n   "+u.upn+"\n   "+(u.dept||"No department")+" | "+(u.enabled?"✅ Active":"🔴 Disabled");}).join("\n\n");
-      if(toolName==="get_channel_messages") return "💬 Recent Teams messages:\n\n"+data.map(function(msg){return "• "+msg.from+" ("+new Date(msg.time).toLocaleString()+"):\n  "+msg.message;}).join("\n\n");
-      if(toolName==="search_kb") return "📚 "+data.length+" KB article(s) found:\n\n"+data.map(function(f,i){return (i+1)+". 📄 "+f.name.replace(".md","").replace(/-/g," ")+"\n   Library: "+(f.library||"KB");}).join("\n\n")+"\n\nAsk me to read any of these articles for details.";
-      if(toolName==="get_device_compliance") return "🔍 Compliance status:\n\n"+data.map(function(d){return "📱 "+d.device+"\n   "+(d.compliance==="compliant"?"✅ Compliant":"⚠️ "+d.compliance)+"\n   💻 "+d.os+"\n   🔐 Encrypted: "+(d.encrypted?"Yes":"No")+"\n   🕐 "+new Date(d.lastSync).toLocaleString();}).join("\n\n");
-      if(toolName==="get_user_groups") return "🏷️ Group memberships:\n\n"+data.map(function(g){return "• "+g.name+(g.description?"\n  "+g.description:"");}).join("\n\n");
-      if(toolName==="get_sign_in_logs") return "🔐 Recent sign-ins:\n\n"+data.slice(0,8).map(function(s){return "• "+(s.userDisplayName||s.userPrincipalName||"Unknown")+"\n  App: "+(s.appDisplayName||"Unknown")+"\n  IP: "+(s.ipAddress||"Unknown")+"\n  "+(s.status&&s.status.errorCode===0?"✅ Success":"❌ Failed")+"\n  🕐 "+new Date(s.createdDateTime).toLocaleString();}).join("\n\n");
-      if(toolName==="get_intune_apps") return "📦 "+data.length+" app(s) deployed:\n\n"+data.map(function(a){return "• "+a.name+(a.publisher?"\n  Publisher: "+a.publisher:"")+(a.state?"\n  State: "+a.state:"");}).join("\n\n");
+      if(toolName==="search_users") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Account Access | Severity: Low\n\n👥 "+data.length+" user(s) found:\n\n"+data.map(function(u){return "👤 "+u.name+"\n   "+u.upn+"\n   "+(u.dept||"No department")+" | "+(u.enabled?"✅ Active":"🔴 Disabled");}).join("\n\n")+"\n\nSource: Live Azure AD Data";
+      if(toolName==="get_channel_messages") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Communication | Severity: Low\n\n💬 Recent Teams messages:\n\n"+data.map(function(msg){return "• "+msg.from+" ("+new Date(msg.time).toLocaleString()+"):\n  "+msg.message;}).join("\n\n")+"\n\nSource: Live Microsoft Teams Data";
+      if(toolName==="search_kb") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Knowledge Base | Severity: Low\n\n📚 "+data.length+" KB article(s) found:\n\n"+data.map(function(f,i){return (i+1)+". 📄 "+f.name.replace(".md","").replace(/-/g," ")+"\n   Library: "+(f.library||"KB");}).join("\n\n")+"\n\nAsk me to read any of these articles for details.\n\nSource: IT Knowledge Base";
+      if(toolName==="get_device_compliance") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Device Management | Severity: Medium\n\n🔍 Compliance status:\n\n"+data.map(function(d){return "📱 "+d.device+"\n   "+(d.compliance==="compliant"?"✅ Compliant":"⚠️ "+d.compliance)+"\n   💻 "+d.os+"\n   🔐 Encrypted: "+(d.encrypted?"Yes":"No")+"\n   🕐 "+new Date(d.lastSync).toLocaleString();}).join("\n\n")+"\n\nSource: Live Intune Compliance Data";
+      if(toolName==="get_user_groups") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Account Access | Severity: Low\n\n🏷️ Group memberships:\n\n"+data.map(function(g){return "• "+g.name+(g.description?"\n  "+g.description:"");}).join("\n\n")+"\n\nSource: Live Azure AD Data";
+      if(toolName==="get_sign_in_logs") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Security | Severity: Medium\n\n🔐 Recent sign-ins:\n\n"+data.slice(0,8).map(function(s){return "• "+(s.userDisplayName||s.userPrincipalName||"Unknown")+"\n  App: "+(s.appDisplayName||"Unknown")+"\n  IP: "+(s.ipAddress||"Unknown")+"\n  "+(s.status&&s.status.errorCode===0?"✅ Success":"❌ Failed")+"\n  🕐 "+new Date(s.createdDateTime).toLocaleString();}).join("\n\n")+"\n\nSource: Live Azure AD Sign-in Logs";
+      if(toolName==="get_intune_apps") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Software & Applications | Severity: Low\n\n📦 "+data.length+" app(s) deployed:\n\n"+data.map(function(a){return "• "+a.name+(a.publisher?"\n  Publisher: "+a.publisher:"")+(a.state?"\n  State: "+a.state:"");}).join("\n\n")+"\n\nSource: Live Intune App Deployment Data";
       return rawText;
     }
     // Single object
-    if(toolName==="get_user") return "👤 "+data.displayName+"\n📧 "+data.upn+"\n🏢 "+(data.department||"No department")+"\n💼 "+(data.jobTitle||"No title")+"\n"+(data.accountEnabled?"✅ Account active":"🔴 Account disabled")+"\n🔑 Password last changed: "+(data.lastPasswordChange?new Date(data.lastPasswordChange).toLocaleDateString():"Unknown");
-    if(toolName==="get_intune_device") return "📱 "+data.name+"\n👤 "+(data.user||data.email||"Unknown")+"\n💻 "+(data.os||"")+"\n🔧 "+(data.model||"")+"\n🔢 Serial: "+(data.serial||"Unknown")+"\n"+(data.compliance==="compliant"?"✅ Compliant":"⚠️ "+data.compliance)+"\n🔐 Encrypted: "+(data.encrypted?"Yes":"No")+"\n💾 Storage: "+(data.storage?data.storage.freeGB+" GB free of "+data.storage.totalGB+" GB":"Unknown")+"\n🕐 Last sync: "+(data.lastSync?new Date(data.lastSync).toLocaleString():"Unknown");
+    if(toolName==="get_user") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Account Access | Severity: Low\n\n👤 "+data.displayName+"\n📧 "+data.upn+"\n🏢 "+(data.department||"No department")+"\n💼 "+(data.jobTitle||"No title")+"\n"+(data.accountEnabled?"✅ Account active":"🔴 Account disabled")+"\n🔑 Password last changed: "+(data.lastPasswordChange?new Date(data.lastPasswordChange).toLocaleDateString():"Unknown")+"\n\nSource: Live Azure AD Data";
+    if(toolName==="get_intune_device") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Hardware | Severity: Low\n\n📱 "+data.name+"\n👤 "+(data.user||data.email||"Unknown")+"\n💻 "+(data.os||"")+"\n🔧 "+(data.model||"")+"\n🔢 Serial: "+(data.serial||"Unknown")+"\n"+(data.compliance==="compliant"?"✅ Compliant":"⚠️ "+data.compliance)+"\n🔐 Encrypted: "+(data.encrypted?"Yes":"No")+"\n💾 Storage: "+(data.storage?data.storage.freeGB+" GB free of "+data.storage.totalGB+" GB":"Unknown")+"\n🕐 Last sync: "+(data.lastSync?new Date(data.lastSync).toLocaleString():"Unknown")+"\n\nSource: Live Intune Device Data";
     return rawText;
   } catch(e) { return rawText; }
 }
@@ -854,8 +861,32 @@ const server = http.createServer(function(reqHttp, res) {
           })).then(function(articles) {
             var combined = articles.map(function(a){return a.text;}).join("\n\n---\n\n");
             var processed = processArticle(combined, message);
-            var sources = articles.map(function(a){return "• "+a.name.replace(".md","").replace(/-/g," ");}).join("\n");
-            var response = (prefix||"")+"📚 Sources:\n"+sources+"\n\n"+processed;
+
+            // Build Article ID from filename (e.g. kb-001-password-reset.md → KB-001)
+            var firstName = articles[0].name || "";
+            var articleIdMatch = firstName.match(/^(kb|rb)-?(\d+)/i);
+            var articleId = articleIdMatch ? articleIdMatch[1].toUpperCase()+"-"+articleIdMatch[2].padStart(3,"0") : "KB";
+            var articleTitle = firstName.replace(/\.md$/i,"").replace(/^(kb|rb)-?\d+-?/i,"").replace(/-/g," ").replace(/\b\w/g,function(c){return c.toUpperCase();}) || firstName.replace(".md","");
+
+            // Detect category from content or filename
+            var contentLower = combined.toLowerCase();
+            var category = contentLower.includes("password")||contentLower.includes("account")?"Account Access":
+              contentLower.includes("vpn")||contentLower.includes("wifi")||contentLower.includes("network")?"Network & Connectivity":
+              contentLower.includes("hardware")||contentLower.includes("laptop")||contentLower.includes("device")?"Hardware":
+              contentLower.includes("software")||contentLower.includes("install")||contentLower.includes("portal")?"Software & Applications":
+              contentLower.includes("outlook")||contentLower.includes("email")?"Email & Communication":
+              contentLower.includes("phish")||contentLower.includes("ransomware")||contentLower.includes("security")?"Security":
+              contentLower.includes("print")?"Printing":"IT Operations";
+
+            var severity = contentLower.includes("critical")||contentLower.includes("ransomware")||contentLower.includes("phish")?"Critical":
+              contentLower.includes("warning")||contentLower.includes("urgent")?"High":"Low";
+
+            var response = "[HIGH CONFIDENCE]\n";
+            response += "Article ID: "+articleId+" | Category: "+category+" | Severity: "+severity+"\n\n";
+            response += (prefix||"");
+            response += processed;
+            response += "\n\nSource: "+articleId+" — "+articleTitle;
+
             res.writeHead(200,{"Content-Type":"application/json"});
             res.end(JSON.stringify({response:response}));
           });
@@ -878,85 +909,4 @@ const server = http.createServer(function(reqHttp, res) {
             var vendorSync = detectedVendor
               ? handleTool("sync_vendor_docs", {vendor: detectedVendor, topic: message, library: "Troubleshooting", max_articles: 2})
               : Promise.resolve(null);
-            return vendorSync.then(function() {
-              return handleTool("search_kb", {query: message});
-            }).then(function(r2) {
-              var t2 = r2.content && r2.content[0] && r2.content[0].text || "";
-              if (t2.startsWith("[")) {
-                try {
-                  var files2 = JSON.parse(t2);
-                  if (files2.length > 0) return readAndRespond(files2, detectedVendor ? "📚 Sources: Microsoft Learn + " + detectedVendor.toUpperCase() + " Support\n\n" : "📚 Source: Microsoft Learn\n\n");
-                } catch(e) {}
-              }
-              res.writeHead(200, {"Content-Type":"application/json"});
-              res.end(JSON.stringify({response: rawText}));
-            });
-          }
-
-          // For vendor queries — also search KB for vendor articles
-          if (detectedVendor && route.tool === "search_kb" && rawText.includes("No results")) {
-            return handleTool("sync_vendor_docs", {vendor: detectedVendor, topic: message, library: "Troubleshooting", max_articles: 3}).then(function() {
-              return handleTool("search_kb", {query: message});
-            }).then(function(r2) {
-              var t2 = r2.content && r2.content[0] && r2.content[0].text || "";
-              if (t2.startsWith("[")) {
-                try {
-                  var files2 = JSON.parse(t2);
-                  if (files2.length > 0) return readAndRespond(files2, "📚 Source: " + detectedVendor.toUpperCase() + " Support\n\n");
-                } catch(e) {}
-              }
-              res.writeHead(200, {"Content-Type":"application/json"});
-              res.end(JSON.stringify({response: "I searched Microsoft Learn and " + detectedVendor.toUpperCase() + " support but couldn't find specific content for: " + message}));
-            });
-          }
-
-          var response = formatChatResponse(route.tool, rawText);
-          res.writeHead(200, {"Content-Type":"application/json"});
-          res.end(JSON.stringify({response: response}));
-        }).catch(function(e) {
-          res.writeHead(200, {"Content-Type":"application/json"});
-          res.end(JSON.stringify({response: "Sorry, I ran into an error: " + e.message}));
-        });
-      } catch(e) {
-        res.writeHead(400, {"Content-Type":"application/json"});
-        res.end(JSON.stringify({error:"Invalid JSON"}));
-      }
-    });
-    return;
-  }
-
-  if (path === "/health") {
-    res.writeHead(200, {"Content-Type":"application/json"});
-    res.end(JSON.stringify({status:"healthy",version:"10.0.0",time:new Date().toISOString()}));
-    return;
-  }
-  // Legacy REST endpoint
-  if (path === "/query" && reqHttp.method === "POST") {
-    var b = "";
-    reqHttp.on("data", function(c) { b += c; });
-    reqHttp.on("end", function() {
-      try {
-        var data = JSON.parse(b);
-        handleTool(data.action || "search_kb", data.params || {}).then(function(result) {
-          res.writeHead(200, {"Content-Type":"application/json"});
-          res.end(JSON.stringify({success:true,result:result.content[0].text}));
-        }).catch(function(e) {
-          res.writeHead(500, {"Content-Type":"application/json"});
-          res.end(JSON.stringify({success:false,error:e.message}));
-        });
-      } catch(e) {
-        res.writeHead(400, {"Content-Type":"application/json"});
-        res.end(JSON.stringify({success:false,error:"Invalid JSON"}));
-      }
-    });
-    return;
-  }
-  res.writeHead(200, {"Content-Type":"application/json"});
-  res.end(JSON.stringify({name:"IT Knowledge Agent",version:"8.0.0",status:"running",endpoints:["/sse","/message","/health","/query","/sync"]}));
-});
-
-server.listen(PORT, function() {
-  console.log("IT Knowledge Agent v10.0 running on port " + PORT);
-console.log("Web chat UI: /chat");
-  console.log("MCP SSE endpoint: /sse");
-});
+            return vendorSync.then(f
