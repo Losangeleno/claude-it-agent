@@ -1,26 +1,35 @@
-name: Deploy to Azure App Service
+﻿name: Build and Deploy to Azure Container Apps
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v3
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Install dependencies
-        run: npm install --production
+    - name: Log in to Azure Container Registry
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Deploy to Azure App Service
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: claude-it-agent
-          publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
-          package: .
+    - name: Build and push Docker image
+      run: |
+        docker build . -t ${{ secrets.REGISTRY_LOGIN_SERVER }}/claude-it-agent:${{ github.sha }}
+        docker push ${{ secrets.REGISTRY_LOGIN_SERVER }}/claude-it-agent:${{ github.sha }}
+
+    - name: Deploy to Azure Container Apps
+      uses: azure/container-apps-deploy-action@v1
+      with:
+        resourceGroup: ${{ secrets.RESOURCE_GROUP }}
+        containerAppName: claude-it-agent
+        imageToDeploy: ${{ secrets.REGISTRY_LOGIN_SERVER }}/claude-it-agent:${{ github.sha }}
