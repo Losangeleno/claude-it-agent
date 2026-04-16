@@ -325,7 +325,8 @@ const TOOLS = [
   {name:"get_noncompliant_devices",description:"List all non-compliant devices in Intune with the reason they are out of compliance. Use to identify devices that need attention.",inputSchema:{type:"object",properties:{platform:{type:"string",description:"Filter by OS: windows, ios, macos, android. Leave blank for all."}}}},
   {name:"get_device_compliance",description:"Get the compliance status and policy details for a specific user or device.",inputSchema:{type:"object",properties:{user:{type:"string",description:"User email or UPN to check all their devices"},device:{type:"string",description:"Device name or ID to check a specific device"}}}},
   {name:"sync_intune_device",description:"Trigger an immediate Intune sync on a device to push latest policies and check compliance.",inputSchema:{type:"object",properties:{device_id:{type:"string",description:"Intune device ID (get from get_intune_device)"}},required:["device_id"]}},
-  {name:"get_intune_apps",description:"List apps deployed through Intune and their installation status across devices.",inputSchema:{type:"object",properties:{app_name:{type:"string",description:"Filter by app name (partial match)"},limit:{type:"number",description:"Max results (default 20)"}}}}
+  {name:"get_intune_apps",description:"List apps deployed through Intune and their installation status across devices.",inputSchema:{type:"object",properties:{app_name:{type:"string",description:"Filter by app name (partial match)"},limit:{type:"number",description:"Max results (default 20)"}}}},
+  {name:"create_list_workflow",description:"Create an interactive IT workflow checklist in Microsoft Lists. Field tech can tick off steps on mobile via Teams Lists tab.",inputSchema:{type:"object",properties:{title:{type:"string"},task_type:{type:"string"},tech_name:{type:"string"},site:{type:"string"},steps:{type:"array",items:{type:"string"}}},required:["title","task_type"]}}
 ];
 
 // ── Tool handlers ─────────────────────────────────────────────────────────────
@@ -754,8 +755,7 @@ function formatChatResponse(toolName, rawText) {
 }
 
 // ── Chat HTML UI ──────────────────────────────────────────────────────────────
-var DEMO_CODE='ITAgent2026Demo';
-var CHAT_HTML = `<!DOCTYPE html>
+var DEMO_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -876,6 +876,27 @@ document.getElementById('inp').focus();
 </body>
 </html>`;
 
+// ── /chat (no gate) — internal field tech use ─────────────────────────────────
+// Built from DEMO_HTML with the gate overlay stripped out.
+var CHAT_HTML = DEMO_HTML
+  // Remove gate CSS rules
+  .replace(/\n#gate\{[^\n]+\}/, '')
+  .replace(/\n#gate-box\{[^\n]+\}/, '')
+  .replace(/\n#gate-box h2\{[^\n]+\}/, '')
+  .replace(/\n#gate-box p\{[^\n]+\}/, '')
+  .replace(/\n#gate-code\{[^\n]+\}/, '')
+  .replace(/\n#gate-code:focus\{[^\n]+\}/, '')
+  .replace(/\n#gate-btn\{[^\n]+\}/, '')
+  .replace(/\n#gate-btn:hover\{[^\n]+\}/, '')
+  .replace(/\n#gate-err\{[^\n]+\}/, '')
+  .replace(/\n\.badge\{[^\n]+\}/, '')
+  // Remove gate HTML block
+  .replace(/<div id="gate">[\s\S]*?<\/div>\n<\/div>\n/, '')
+  // Remove gate JS
+  .replace(/var DEMO_ACCESS='[^']*';\n/, '')
+  .replace(/function checkCode\(\)\{[\s\S]*?^\}\n/m, '')
+  .replace(/if\(sessionStorage\.getItem\('demo_auth'\)==='1'\)\{[^}]+\}\n/, '');
+
 // ── Claude API integration ────────────────────────────────────────────────────
 var CLAUDE_SYSTEM_PROMPT = "You are an expert IT Support Agent for this organisation. Your primary mission is to assist IT staff and end-users by retrieving accurate, step-by-step information from the internal IT Knowledge Base and Operational Runbooks.\n\nFor ANY IT question, ALWAYS call search_kb first. If it returns file results, call read_file on the top result and base your answer on that content.\n\nEvery response MUST follow this exact format:\n[HIGH CONFIDENCE] or [MEDIUM CONFIDENCE] or [LOW CONFIDENCE]\nArticle ID: KB-XXX or RB-XXX | Category: [Category] | Severity: [Low/Medium/High/Critical]\n\nSummary: One sentence describing what this response covers.\n\nThen provide the full step-by-step procedure with:\n- Numbered steps for sequential procedures\n- Checkboxes [ ] for diagnostic checks\n- Phase headings for multi-phase tasks\n- Callouts: NOTE, WARNING, EXPECTED RESULT, TIP\n\nEvery response must end with:\nSource: [Article ID] - [Article Title]\n\nIf no KB article found, use [LOW CONFIDENCE] and Source: General IT best practice (no KB article found).\n\nEscalation contacts:\n- Security incidents: IT Security hotline ext. 9999 (24/7)\n- Standard failures: IT Service Desk ext. 1234 or https://itportal.yourorg.com\n\nEMAIL INSTRUCTIONS:\n- When the user asks to email anything, ALWAYS use the send_email tool immediately.\n- Default recipient: manueltucker@gmail.com (use this unless told otherwise)\n- Always send as HTML (is_html: true) for rich formatting\n- Format emailed documents with proper HTML: headings, numbered lists, checkboxes as unicode, tables for escalation paths\n- When emailing a KB article or procedure, include the FULL content — all phases, all steps, all callouts\n- Confirm to the user after sending: 'Email sent to manueltucker@gmail.com'\n\nWORKFLOW INSTRUCTIONS:\n- When the user asks to create a workflow, checklist, or job card, use the create_workflow tool\n- Detect task type: cisco_phone for Cisco phone installs, autopilot for new device setup, printer for printer setup, network for network config\n- Always confirm the OneNote link after creation so the tech can open it on mobile";
 
@@ -965,6 +986,89 @@ function handleClaudeChat(userMessage) {
   return loop(0);
 }
 
+// ── Teams Bot integration ─────────────────────────────────────────────────────
+// Set BOT_APP_ID and BOT_APP_PASSWORD as Azure Container Apps env vars after
+// registering an Azure Bot (portal.azure.com → Create resource → Azure Bot).
+// Set the bot messaging endpoint to:
+//   https://<your-app>.azurecontainerapps.io/api/messages
+// Then enable the Microsoft Teams channel in the bot configuration.
+
+var BOT_APP_ID       = process.env.BOT_APP_ID       || "";
+var BOT_APP_PASSWORD = process.env.BOT_APP_PASSWORD  || "";
+var botToken = null, botTokenExpiry = 0;
+
+function getBotToken() {
+  if (botToken && Date.now() < botTokenExpiry) return Promise.resolve(botToken);
+  var b = "grant_type=client_credentials"
+    + "&client_id="     + encodeURIComponent(BOT_APP_ID)
+    + "&client_secret=" + encodeURIComponent(BOT_APP_PASSWORD)
+    + "&scope="         + encodeURIComponent("https://api.botframework.com/.default");
+  return req({
+    hostname: "login.microsoftonline.com",
+    path:     "/botframework.com/oauth2/v2.0/token",
+    method:   "POST",
+    headers:  { "Content-Type": "application/x-www-form-urlencoded", "Content-Length": Buffer.byteLength(b) }
+  }, b).then(function(r) {
+    botToken       = r.body.access_token;
+    botTokenExpiry = Date.now() + ((r.body.expires_in || 3600) - 60) * 1000;
+    return botToken;
+  });
+}
+
+// Send a reply back into the Teams conversation via Bot Framework connector
+function sendBotReply(serviceUrl, conversationId, replyToId, replyText) {
+  return getBotToken().then(function(token) {
+    var payload = JSON.stringify({
+      type:      "message",
+      text:      replyText,
+      textFormat:"plain"
+    });
+    var u    = new URL(serviceUrl.replace(/\/$/, ""));
+    var path = "/v3/conversations/" + encodeURIComponent(conversationId)
+             + "/activities/" + encodeURIComponent(replyToId);
+    return new Promise(function(resolve) {
+      var d = Buffer.from(payload, "utf8");
+      var r = https.request({
+        hostname: u.hostname,
+        path:     path,
+        method:   "POST",
+        headers:  {
+          Authorization:   "Bearer " + token,
+          "Content-Type":  "application/json",
+          "Content-Length": d.length
+        }
+      }, function(re) {
+        var s = ""; re.on("data", function(c) { s += c; }); re.on("end", function() { resolve(s); });
+      });
+      r.on("error", function(e) { resolve("error: " + e.message); });
+      r.write(d);
+      r.end();
+    });
+  }).catch(function(e) { return "getBotToken error: " + e.message; });
+}
+
+// Handle an incoming Bot Framework activity (called from /api/messages)
+function handleBotActivity(activity) {
+  // Only respond to message activities
+  if (!activity || activity.type !== "message") return Promise.resolve();
+  var text        = (activity.text || "").trim();
+  var serviceUrl  = activity.serviceUrl || "";
+  var convId      = activity.conversation && activity.conversation.id;
+  var replyToId   = activity.id;
+
+  if (!text || !serviceUrl || !convId) return Promise.resolve();
+
+  // Route through the Claude agentic loop (same as the web chat)
+  return handleClaudeChat(text).then(function(response) {
+    return sendBotReply(serviceUrl, convId, replyToId, response);
+  }).catch(function(e) {
+    return sendBotReply(serviceUrl, convId, replyToId,
+      "[LOW CONFIDENCE]\nArticle ID: N/A | Category: General IT | Severity: Low\n\n" +
+      "Sorry, I ran into an error processing your request: " + e.message +
+      "\n\nSource: General IT best practice");
+  });
+}
+
 // ── HTTP server ───────────────────────────────────────────────────────────────
 const server = http.createServer(function(reqHttp, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -977,13 +1081,48 @@ const server = http.createServer(function(reqHttp, res) {
   if (path === "/sse" && reqHttp.method === "GET") { handleSSE(reqHttp, res); return; }
   if (path === "/message" && reqHttp.method === "POST") { handleMessage(reqHttp, res); return; }
 
+  // ── Teams Bot Framework endpoint ──────────────────────────────────────────
+  // Azure Bot Service posts all incoming Teams messages here.
+  // Register BOT_APP_ID + BOT_APP_PASSWORD env vars to enable.
+  if (path === "/api/messages" && reqHttp.method === "POST") {
+    var botBody = "";
+    reqHttp.on("data", function(c) { botBody += c; });
+    reqHttp.on("end", function() {
+      // Acknowledge immediately (Bot Framework requires fast 200)
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end("{}");
+      // Process activity asynchronously
+      try {
+        var activity = JSON.parse(botBody);
+        // Only process if bot credentials are configured
+        if (!BOT_APP_ID || !BOT_APP_PASSWORD) {
+          console.log("[Bot] /api/messages received but BOT_APP_ID/BOT_APP_PASSWORD not set.");
+          return;
+        }
+        handleBotActivity(activity).catch(function(e) {
+          console.error("[Bot] handleBotActivity error:", e.message);
+        });
+      } catch(e) {
+        console.error("[Bot] JSON parse error:", e.message);
+      }
+    });
+    return;
+  }
+
   // ── Web Chat UI ──────────────────────────────────────────────────────────
+  // /chat  — no gate, bookmark this on your phone for instant access
+  // /demo  — gate-protected, share this link for external demos
   if (path === "/chat" && reqHttp.method === "GET") {
     res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
     res.end(CHAT_HTML);
     return;
   }
-  if (path === "/chat" && reqHttp.method === "POST") {
+  if (path === "/demo" && reqHttp.method === "GET") {
+    res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
+    res.end(DEMO_HTML);
+    return;
+  }
+  if ((path === "/chat" || path === "/demo") && reqHttp.method === "POST") {
     var chatBody = "";
     reqHttp.on("data", function(c) { chatBody += c; });
     reqHttp.on("end", function() {
