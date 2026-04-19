@@ -1485,18 +1485,24 @@ const server = http.createServer(function(reqHttp, res) {
     });
     return;
   }
-  // /.well-known/* must 404 so OAuth-aware MCP clients (mcp-remote) skip
-  // OAuth discovery and fall back to the static Authorization: Bearer header.
-  // Previously this fell through to the catch-all below and returned service-info
-  // JSON with a 200, which mcp-remote misread as malformed OAuth metadata
-  // ("expected string, received undefined" for issuer/authorization_endpoint/...).
-  if (path.indexOf("/.well-known/") === 0) {
-    res.writeHead(404, {"Content-Type":"application/json"});
-    res.end(JSON.stringify({error:"not_found",path:path}));
+  // Root path returns the service banner (kept for humans/CLI pings).
+  if (path === "/" || path === "") {
+    res.writeHead(200, {"Content-Type":"application/json"});
+    res.end(JSON.stringify({name:"IT Knowledge Agent",version:"8.0.0",status:"running",endpoints:["/sse","/message","/health","/query","/sync"]}));
     return;
   }
-  res.writeHead(200, {"Content-Type":"application/json"});
-  res.end(JSON.stringify({name:"IT Knowledge Agent",version:"8.0.0",status:"running",endpoints:["/sse","/message","/health","/query","/sync"]}));
+  // Everything else 404s. This matters for OAuth-aware MCP clients (mcp-remote),
+  // which probe /.well-known/oauth-authorization-server, /register, /authorize,
+  // /token etc. as part of RFC 8414 discovery + RFC 7591 dynamic client
+  // registration. Previously those fell through to the catch-all and returned
+  // service-info JSON with a 200, which mcp-remote's zod validators read as
+  // malformed OAuth metadata / client-info and crashed the bridge
+  // (ZodError: expected string client_id / expected array redirect_uris /
+  //  expected string issuer / expected string authorization_endpoint). Returning
+  // 404 causes the client to skip the OAuth flow and fall back to the static
+  // Authorization: Bearer header, letting the SSE handshake complete.
+  res.writeHead(404, {"Content-Type":"application/json"});
+  res.end(JSON.stringify({error:"not_found",path:path}));
 });
 
 server.listen(PORT, function() {
