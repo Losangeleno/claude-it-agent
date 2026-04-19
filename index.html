@@ -6,29 +6,40 @@
 <title>IT Knowledge Agent</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; }
-  #header { background: #16213e; padding: 15px 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #0f3460; }
-  #header h1 { font-size: 18px; color: #e94560; }
-  #header span { font-size: 12px; color: #888; }
-  #messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0b1220; color: #e6edf7; height: 100vh; display: flex; flex-direction: column; }
+  #header { background: #111a2c; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid #1f2a44; }
+  #header h1 { font-size: 18px; color: #4ea1ff; font-weight: 600; }
+  #header span.sub { font-size: 12px; color: #8aa0c2; }
+  #messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 15px; }
   .msg { max-width: 85%; padding: 12px 16px; border-radius: 18px; line-height: 1.5; font-size: 15px; }
-  .user { background: #0f3460; align-self: flex-end; border-bottom-right-radius: 4px; }
-  .agent { background: #16213e; align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid #0f3460; }
-  .agent pre { white-space: pre-wrap; font-family: monospace; font-size: 13px; background: #0a0a1a; padding: 10px; border-radius: 8px; margin-top: 8px; }
-  .thinking { color: #888; font-style: italic; }
-  #input-area { background: #16213e; padding: 15px; border-top: 1px solid #0f3460; display: flex; gap: 10px; align-items: flex-end; }
-  #query { flex: 1; background: #0f3460; border: none; border-radius: 20px; padding: 12px 16px; color: #eee; font-size: 15px; outline: none; resize: none; max-height: 120px; }
-  #query::placeholder { color: #666; }
-  .btn { background: #e94560; border: none; border-radius: 50%; width: 44px; height: 44px; color: white; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .btn:active { background: #c73652; }
-  #mic-btn { background: #0f3460; }
+  .user { background: #1c4e9b; align-self: flex-end; border-bottom-right-radius: 4px; }
+  .agent { background: #131c33; align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid #1f2a44; }
+  .agent pre { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px; background: #0a1022; padding: 10px; border-radius: 8px; margin-top: 8px; }
+  .thinking { color: #8aa0c2; font-style: italic; }
+
+  /* Welcome card matching screenshot */
+  .welcome-card { background: #131c33; border: 1px solid #1f2a44; border-radius: 14px; padding: 22px 22px 18px 22px; max-width: 760px; margin: 0 auto 6px auto; position: relative; overflow: hidden; }
+  .welcome-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #4ea1ff, #6f8cff); }
+  .welcome-card h2 { font-size: 18px; color: #e6edf7; margin-bottom: 10px; font-weight: 600; }
+  .welcome-card p { font-size: 14px; color: #b8c5db; line-height: 1.55; margin-bottom: 8px; }
+  .welcome-card p.cta { color: #8aa0c2; font-style: italic; margin-top: 12px; margin-bottom: 14px; }
+  .suggested { display: flex; flex-direction: column; gap: 10px; max-width: 760px; margin: 0 auto; }
+  .suggested-btn { background: transparent; border: 1px solid #2b6cb0; color: #cfe1ff; padding: 12px 18px; border-radius: 999px; font-size: 14px; cursor: pointer; text-align: left; transition: background .15s, border-color .15s; }
+  .suggested-btn:hover { background: rgba(46,108,176,0.15); border-color: #4ea1ff; }
+  .suggested-btn:active { background: rgba(46,108,176,0.25); }
+
+  #input-area { background: #111a2c; padding: 14px; border-top: 1px solid #1f2a44; display: flex; gap: 10px; align-items: flex-end; }
+  #query { flex: 1; background: #0f1830; border: 1px solid #1f2a44; border-radius: 22px; padding: 12px 16px; color: #e6edf7; font-size: 15px; outline: none; resize: none; max-height: 120px; }
+  #query::placeholder { color: #6c7e9b; }
+  #query:focus { border-color: #4ea1ff; }
+  .btn { background: #2b6cb0; border: none; border-radius: 50%; width: 44px; height: 44px; color: white; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .btn:active { background: #1e4f87; }
+  .btn:hover { background: #3477c1; }
+  #mic-btn { background: #1c2740; }
   #mic-btn.listening { background: #e94560; animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
-  .quick-btns { display: flex; gap: 8px; padding: 10px 15px; overflow-x: auto; background: #16213e; border-top: 1px solid #0f3460; }
-  .quick-btn { background: #0f3460; border: 1px solid #e94560; color: #eee; padding: 6px 12px; border-radius: 20px; font-size: 12px; cursor: pointer; white-space: nowrap; }
-  .quick-btn:active { background: #e94560; }
-  .status { font-size: 11px; padding: 4px 8px; border-radius: 10px; }
-  .online { background: #1a472a; color: #51cf66; }
+  .status { font-size: 11px; padding: 4px 10px; border-radius: 10px; font-weight: 500; }
+  .online { background: #133b22; color: #51cf66; }
   .offline { background: #3b1219; color: #ff6b6b; }
 </style>
 </head>
@@ -36,32 +47,25 @@
 
 <div id="header">
   <div>
-    <h1>🔧 IT Knowledge Agent</h1>
-    <span>Manuel Tucker • ClaudeITAgent</span>
+    <h1>Claude IT Support Agent</h1>
+    <span class="sub">Manuel Tucker • ClaudeITAgent</span>
   </div>
   <span id="status" class="status offline">Checking...</span>
 </div>
 
 <div id="messages">
-  <div class="msg agent">
-    👋 Hi Manuel! I'm your IT Knowledge Base agent.<br><br>
-    I can help you with:<br>
-    • Cabling specs & color codes<br>
-    • Teams, Outlook, Windows troubleshooting<br>
-    • Microsoft 365 service health<br>
-    • Cisco security advisories<br>
-    • Your runbooks & scripts<br><br>
-    Ask me anything or use the quick buttons below!
+  <div class="welcome-card">
+    <h2>Welcome to the Claude IT Support Agent demo!</h2>
+    <p>I can answer IT questions, retrieve step-by-step procedures from the knowledge base, check Microsoft 365 service health, look up devices and users, and create field tech workflow checklists.</p>
+    <p class="cta">Try one of the suggested questions below or ask your own.</p>
+    <div class="suggested">
+      <button class="suggested-btn" onclick="askSuggested('New user full workstation + Cisco phone deployment')">New user full workstation + Cisco phone deployment</button>
+      <button class="suggested-btn" onclick="askSuggested('No network connectivity at user desk')">No network connectivity at user desk</button>
+      <button class="suggested-btn" onclick="askSuggested('Printer install / offline / cannot print issue')">Printer install / offline / cannot print issue</button>
+      <button class="suggested-btn" onclick="askSuggested('Conference room / Teams / Cisco video room failure')">Conference room / Teams / Cisco video room failure</button>
+      <button class="suggested-btn" onclick="askSuggested('User laptop replacement / migration')">User laptop replacement / migration</button>
+    </div>
   </div>
-</div>
-
-<div class="quick-btns">
-  <button class="quick-btn" onclick="quickAsk('ms_service_health', {}, 'Check MS 365 health')">MS Health</button>
-  <button class="quick-btn" onclick="quickAsk('list_library', {library:'Cabling'}, 'List Cabling files')">Cabling</button>
-  <button class="quick-btn" onclick="quickAsk('list_library', {library:'Troubleshooting'}, 'List Troubleshooting files')">Troubleshoot</button>
-  <button class="quick-btn" onclick="quickAsk('list_library', {library:'Scripts'}, 'List Scripts')">Scripts</button>
-  <button class="quick-btn" onclick="quickAsk('cisco_advisories', {product:'IOS'}, 'Cisco IOS advisories')">Cisco IOS</button>
-  <button class="quick-btn" onclick="quickAsk('list_library', {library:'Runbooks'}, 'List Runbooks')">Runbooks</button>
 </div>
 
 <div id="input-area">
@@ -195,6 +199,12 @@ async function sendQuery() {
     thinking.remove();
     addMessage("❌ Cannot reach agent. Is your PC on?<br><small>" + e.message + "</small>", "agent");
   }
+}
+
+function askSuggested(text) {
+  const input = document.getElementById("query");
+  input.value = text;
+  sendQuery();
 }
 
 function quickAsk(action, params, display) {

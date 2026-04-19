@@ -773,9 +773,15 @@ header span{font-size:12px;opacity:.75;margin-left:auto}
 .user{background:#0078d4;color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
 .agent{background:#1e2130;color:#e8eaf0;align-self:flex-start;border-bottom-left-radius:4px;border:1px solid #2a2d3e}
 .agent.loading{color:#6b7280;font-style:italic}
-.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
-.chip{padding:6px 13px;background:#0078d415;border:1px solid #0078d460;border-radius:20px;font-size:12px;cursor:pointer;color:#60a5fa;transition:background .2s}
-.chip:hover{background:#0078d430}
+.chips{display:flex;flex-direction:column;gap:10px;margin-top:14px;max-width:640px}
+.chip{padding:12px 18px;background:transparent;border:1px solid #2b6cb0;border-radius:999px;font-size:14px;cursor:pointer;color:#cfe1ff;transition:background .15s,border-color .15s;text-align:left;display:block}
+.chip:hover{background:rgba(43,108,176,.18);border-color:#4ea1ff}
+.chip:active{background:rgba(43,108,176,.28)}
+.welcome-title{font-weight:600;font-size:16px;margin-bottom:8px;color:#e8eaf0}
+.welcome-body{color:#b8c5db;line-height:1.55}
+.welcome-cta{color:#8aa0c2;font-style:italic;margin-top:10px}
+.agent.welcome{max-width:760px;background:#1e2130;border:1px solid #2a2d3e;border-radius:14px;padding:18px 20px;position:relative;overflow:hidden}
+.agent.welcome::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#4ea1ff,#6f8cff)}
 footer{padding:10px 12px;background:#161824;border-top:1px solid #2a2d3e;display:flex;gap:8px;flex-shrink:0}
 #inp{flex:1;padding:11px 16px;border-radius:22px;border:1px solid #2a2d3e;background:#1e2130;color:#e8eaf0;font-size:15px;outline:none;transition:border .2s}
 #inp:focus{border-color:#0078d4}
@@ -815,17 +821,15 @@ button:active{background:#005a9e}
   <span>Field Support</span>
 </header>
 <div id="msgs">
-  <div class="bubble agent">Welcome to the Claude IT Support Agent demo!
-I can answer IT questions, retrieve step-by-step procedures from the knowledge base, check Microsoft 365 service health, look up devices and users, and create field tech workflow checklists.
-
-Try one of the suggested questions below or ask your own.
+  <div class="bubble agent welcome"><div class="welcome-title">Welcome to the Claude IT Support Agent demo!</div>
+<div class="welcome-body">I can answer IT questions, retrieve step-by-step procedures from the knowledge base, check Microsoft 365 service health, look up devices and users, and create field tech workflow checklists.</div>
+<div class="welcome-cta">Try one of the suggested questions below or ask your own.</div>
 <div class="chips">
-  <span class="chip" onclick="ask(this.textContent)">Cisco phone install workflow</span>
-  <span class="chip" onclick="ask(this.textContent)">Autopilot new device setup</span>
-  <span class="chip" onclick="ask(this.textContent)">How do I reset my Active Directory password</span>
-  <span class="chip" onclick="ask(this.textContent)">VPN not connecting</span>
-  <span class="chip" onclick="ask(this.textContent)">Printer not showing up</span>
-  <span class="chip" onclick="ask(this.textContent)">M365 service health</span>
+  <span class="chip" onclick="ask(this.textContent)">New user full workstation + Cisco phone deployment</span>
+  <span class="chip" onclick="ask(this.textContent)">No network connectivity at user desk</span>
+  <span class="chip" onclick="ask(this.textContent)">Printer install / offline / cannot print issue</span>
+  <span class="chip" onclick="ask(this.textContent)">Conference room / Teams / Cisco video room failure</span>
+  <span class="chip" onclick="ask(this.textContent)">User laptop replacement / migration</span>
 </div>
   </div>
 </div>
