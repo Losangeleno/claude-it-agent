@@ -1485,6 +1485,16 @@ const server = http.createServer(function(reqHttp, res) {
     });
     return;
   }
+  // /.well-known/* must 404 so OAuth-aware MCP clients (mcp-remote) skip
+  // OAuth discovery and fall back to the static Authorization: Bearer header.
+  // Previously this fell through to the catch-all below and returned service-info
+  // JSON with a 200, which mcp-remote misread as malformed OAuth metadata
+  // ("expected string, received undefined" for issuer/authorization_endpoint/...).
+  if (path.indexOf("/.well-known/") === 0) {
+    res.writeHead(404, {"Content-Type":"application/json"});
+    res.end(JSON.stringify({error:"not_found",path:path}));
+    return;
+  }
   res.writeHead(200, {"Content-Type":"application/json"});
   res.end(JSON.stringify({name:"IT Knowledge Agent",version:"8.0.0",status:"running",endpoints:["/sse","/message","/health","/query","/sync"]}));
 });
