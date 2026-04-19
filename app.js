@@ -1081,6 +1081,95 @@ const server = http.createServer(function(reqHttp, res) {
   if (path === "/sse" && reqHttp.method === "GET") { handleSSE(reqHttp, res); return; }
   if (path === "/message" && reqHttp.method === "POST") { handleMessage(reqHttp, res); return; }
 
+  // ── Stub OAuth 2.1 endpoints so mcp-remote's mandatory auth flow succeeds ──
+  // mcp-remote (the npm bridge Claude Desktop spawns) always runs OAuth before
+  // opening the SSE stream. There is no CLI flag to skip it. So we implement
+  // the four endpoints it walks through, and hand back API_KEY from /token so
+  // the bridge's cached access_token is exactly the bearer our /sse + /message
+  // handlers already accept.
+  //
+  //   GET  /.well-known/oauth-authorization-server  RFC 8414 AS metadata
+  //   POST /register                                RFC 7591 dynamic client reg
+  //   GET  /authorize                               302 back with ?code=...&state=...
+  //   POST /token                                   { access_token: API_KEY, ... }
+  //
+  // PKCE parameters (code_challenge / code_verifier) are accepted and ignored —
+  // we don't need real crypto because the issued access_token is always API_KEY.
+  var BASE = "https://" + (reqHttp.headers.host || "claude-it-agent.whitestone-6cbe99bc.eastus.azurecontainerapps.io");
+
+  if (path === "/.well-known/oauth-authorization-server" && reqHttp.method === "GET") {
+    res.writeHead(200, {"Content-Type":"application/json"});
+    res.end(JSON.stringify({
+      issuer: BASE,
+      authorization_endpoint: BASE + "/authorize",
+      token_endpoint: BASE + "/token",
+      registration_endpoint: BASE + "/register",
+      response_types_supported: ["code"],
+      grant_types_supported: ["authorization_code","refresh_token"],
+      code_challenge_methods_supported: ["S256","plain"],
+      token_endpoint_auth_methods_supported: ["none","client_secret_basic","client_secret_post"],
+      scopes_supported: ["mcp","offline_access"]
+    }));
+    return;
+  }
+
+  if (path === "/register" && reqHttp.method === "POST") {
+    var regBody = "";
+    reqHttp.on("data", function(c) { regBody += c; });
+    reqHttp.on("end", function() {
+      var parsed = {};
+      try { parsed = JSON.parse(regBody || "{}"); } catch(e) { parsed = {}; }
+      res.writeHead(201, {"Content-Type":"application/json"});
+      res.end(JSON.stringify({
+        client_id: "mcp-remote-stub",
+        client_secret: "not-used",
+        client_id_issued_at: Math.floor(Date.now()/1000),
+        client_secret_expires_at: 0,
+        redirect_uris: parsed.redirect_uris || ["http://localhost/callback"],
+        client_name: parsed.client_name || "MCP CLI Proxy",
+        token_endpoint_auth_method: "none",
+        grant_types: ["authorization_code","refresh_token"],
+        response_types: ["code"]
+      }));
+    });
+    return;
+  }
+
+  if (path === "/authorize" && reqHttp.method === "GET") {
+    var qs = (new URL(reqHttp.url, "http://localhost")).searchParams;
+    var redirectUri = qs.get("redirect_uri");
+    var state = qs.get("state") || "";
+    if (!redirectUri) {
+      res.writeHead(400, {"Content-Type":"application/json"});
+      res.end(JSON.stringify({error:"invalid_request",error_description:"redirect_uri required"}));
+      return;
+    }
+    var sep = redirectUri.indexOf("?") >= 0 ? "&" : "?";
+    var location = redirectUri + sep + "code=mcp-remote-stub-code" +
+                   (state ? "&state=" + encodeURIComponent(state) : "");
+    res.writeHead(302, {"Location": location});
+    res.end();
+    return;
+  }
+
+  if (path === "/token" && reqHttp.method === "POST") {
+    var tokBody = "";
+    reqHttp.on("data", function(c) { tokBody += c; });
+    reqHttp.on("end", function() {
+      // Accept any grant_type / code / verifier; we always hand back API_KEY
+      // so the bridge's downstream requests match the bearer our /sse accepts.
+      res.writeHead(200, {"Content-Type":"application/json","Cache-Control":"no-store"});
+      res.end(JSON.stringify({
+        access_token: API_KEY,
+        token_type: "Bearer",
+        expires_in: 3600,
+        refresh_token: "mcp-remote-stub-refresh",
+        scope: "mcp"
+      }));
+    });
+    return;
+  }
+
   // ── Teams Bot Framework endpoint ──────────────────────────────────────────
   // Azure Bot Service posts all incoming Teams messages here.
   // Register BOT_APP_ID + BOT_APP_PASSWORD env vars to enable.
