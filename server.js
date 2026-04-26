@@ -1,20 +1,41 @@
 const https = require("https");
+const fs    = require("fs");
+const path  = require("path");
 
-const TENANT_ID     = "e876d5db-a9f8-4e71-abc1-dcee4d8b0578";
-const CLIENT_ID     = "50d28fcf-1e66-452f-be81-36b40b640605";
-const CLIENT_SECRET = "OCy8Q~qnTAqtSfK.8bIdnKVqcCv46zMFGkIhQbtc";
+// ── Load .env (no external dependency; safe if .env missing) ─────────────────
+try {
+  var __envPath = path.join(__dirname, ".env");
+  if (fs.existsSync(__envPath)) {
+    fs.readFileSync(__envPath, "utf8").split(/\r?\n/).forEach(function (line) {
+      var m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (m && process.env[m[1]] === undefined) {
+        process.env[m[1]] = m[2].replace(/^["'](.*)["']$/, "$1");
+      }
+    });
+  }
+} catch (_) { /* fail open — fall back to pre-set env */ }
 
-// ── Teams + Azure AD app (Phase 1 & 2) ───────────────────────────────────────
-const GRAPH_CLIENT_ID     = "9c823e8e-5ce1-480c-8240-e19f6b23512e";
-const GRAPH_CLIENT_SECRET = "pMN8Q~7qNKr6pjEc4j9FLTHBA74rH.CwjwnjmbAg";
-const TEAMS_WEBHOOK_URL   = "https://claudeitagent.webhook.office.com/webhookb2/1dede829-35a4-4d2b-96d4-ab4687aa13a5@e876d5db-a9f8-4e71-abc1-dcee4d8b0578/IncomingWebhook/a5405b78e76940f1b4175bfac7486426/11d7d5c6-f55b-47ef-85e8-f9d17941e2a1/V2Wba6PgaYn13xB5CHkZ8cZsICUrVnSI-PhIA1U2qADrk1";
-const TEAMS_TEAM_ID       = "1dede829-35a4-4d2b-96d4-ab4687aa13a5";
-const TEAMS_CHANNEL_ID    = "19:h3O1iQ3KfOuqLoQKUtbWEa2lLMqHBwjX1qTlTK0lrqw1@thread.tacv2";
-const TENANT_NAME   = "ClaudeITAgent";
-const SITE_NAME     = "ITKnowledgeBase";
-const SENDER_EMAIL  = "manueltucker@claudeitagent.onmicrosoft.com";
-const CISCO_KEY     = "qtbj2x2knjbmewmnt3kss8hy";
-const CISCO_SECRET  = "g7MRPgWGBPdaKcAQTuxDGqBB";
+// ── Secrets and IDs now sourced from env (populated from .env or PM2) ────────
+// NOTE: legacy SP app reg 50d28fcf was retired (task #28); SP and Graph token
+// calls are both consolidated onto app reg 9c823e8e (GRAPH_CLIENT_ID).
+const TENANT_ID           = process.env.AZURE_TENANT_ID || "e876d5db-a9f8-4e71-abc1-dcee4d8b0578";
+const CLIENT_ID           = process.env.GRAPH_CLIENT_ID || process.env.AZURE_CLIENT_ID    || "";
+const CLIENT_SECRET       = process.env.GRAPH_CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET || "";
+const GRAPH_CLIENT_ID     = CLIENT_ID;
+const GRAPH_CLIENT_SECRET = CLIENT_SECRET;
+const TEAMS_WEBHOOK_URL   = process.env.TEAMS_WEBHOOK_URL || process.env.TEAMS_ALERTS_WEBHOOK || "";
+const TEAMS_TEAM_ID       = process.env.TEAMS_IT_TEAM_ID || "1dede829-35a4-4d2b-96d4-ab4687aa13a5";
+const TEAMS_CHANNEL_ID    = process.env.TEAMS_GENERAL_CHANNEL_ID || "19:h3O1iQ3KfOuqLoQKUtbWEa2lLMqHBwjX1qTlTK0lrqw1@thread.tacv2";
+const TENANT_NAME         = "ClaudeITAgent";
+const SITE_NAME           = "ITKnowledgeBase";
+const SENDER_EMAIL        = process.env.SENDER_EMAIL || "manueltucker@claudeitagent.onmicrosoft.com";
+const CISCO_KEY           = process.env.CISCO_KEY    || "";
+const CISCO_SECRET        = process.env.CISCO_SECRET || "";
+
+// Fail fast with a clear message if the critical secret is missing at startup.
+if (!GRAPH_CLIENT_ID || !GRAPH_CLIENT_SECRET) {
+  process.stderr.write("[server.js] WARN: GRAPH_CLIENT_ID/SECRET missing — Graph calls will 401 until .env is populated.\n");
+}
 
 let spToken=null,spExpiry=0,graphToken=null,graphExpiry=0,ciscoToken=null,ciscoExpiry=0,siteId=null,cachedDrives=[];
 
