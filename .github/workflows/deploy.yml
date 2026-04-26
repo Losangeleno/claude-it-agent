@@ -1,4 +1,4 @@
-﻿name: Deploy to Azure Container Apps
+name: Deploy to Azure Container Apps
 on:
   push:
     branches: [ main, master ]
@@ -14,6 +14,4 @@ jobs:
       - name: Build and push via ACR
         run: az acr build --registry claudeitagentacr --image claude-it-agent:latest .
       - name: Deploy
-        run: |
-          PASSWORD=$(az acr credential show --name claudeitagentacr --query passwords[0].value -o tsv)
-          az containerapp update --name claude-it-agent --resource-group claude-it-agent-rg --image claudeitagentacr.azurecr.io/claude-it-agent:latest --registry-server claudeitagentacr.azurecr.io --registry-username claudeitagentacr --registry-password $PASSWORD
+        run: az containerapp update --name claude-it-agent --resource-group claude-it-agent-rg --image claudeitagentacr.azurecr.io/claude-it-agent:latest
