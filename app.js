@@ -1,4 +1,4 @@
-﻿/**
+/**
 
 const sp = require('./sharepoint-proxy');
 sp.validateConfig();
@@ -646,7 +646,7 @@ function callClaude(msg){return new Promise(function(resolve){var https=require(
 function callClaude(msg){return new Promise(function(resolve){var https=require('https');var body=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,system:'You are an expert IT support technician for an organization using Microsoft 365, Windows 11, Cisco, and enterprise hardware. Answer helpfully and concisely.',messages:[{role:'user',content:msg}]});var req=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(body)}},function(res){var d='';res.on('data',function(chunk){d+=chunk});res.on('end',function(){try{var p=JSON.parse(d);resolve(p.content&&p.content[0]?p.content[0].text:'No response.');}catch(e){resolve('AI parse error.');}});});req.on('error',function(e){resolve('AI error: '+e.message);});req.write(body);req.end();});}
 var CHAT_HTML = `<!DOCTYPE html>
 <html lang="en">
-<head>
+<head><meta charset="UTF-8">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>IT Agent</title>
