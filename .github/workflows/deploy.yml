@@ -1,4 +1,4 @@
-﻿name: Deploy to Azure Container Apps
+name: Deploy to Azure Container Apps
 on:
   push:
     branches: [ main, master ]
@@ -17,7 +17,4 @@ jobs:
           docker build -t claudeitagentacr.azurecr.io/claude-it-agent:latest .
           docker push claudeitagentacr.azurecr.io/claude-it-agent:latest
       - name: Deploy to Container App
-        run: |
-          az containerapp update --name claude-it-agent --resource-group claude-it-agent-rg --image claudeitagentacr.azurecr.io/claude-it-agent:latest
-      - name: Done
-        run: echo "Live at https://claude-it-agent.whitestone-6cbe99bc.eastus.azurecontainerapps.io"
+        run: az containerapp update --name claude-it-agent --resource-group claude-it-agent-rg --image claudeitagentacr.azurecr.io/claude-it-agent:latest --registry-server claudeitagentacr.azurecr.io --registry-username claudeitagentacr --registry-password 5smdO50563uFhQ0j7WKN553qz8cGAjOinpUxosvrcZI8H6j0HWuGJQQJ99CDACYeBjFEqg7NAAACAZCRgqGl
