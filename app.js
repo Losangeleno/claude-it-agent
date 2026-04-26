@@ -926,8 +926,7 @@ const server = http.createServer(function(reqHttp, res) {
           res.end(JSON.stringify({response: "Sorry, I ran into an error: " + e.message}));
         });
       } catch(e) {
-        res.writeHead(400, {"Content-Type":"application/json"});
-        res.end(JSON.stringify({error:"Invalid JSON"}));
+        callClaude(message||"IT support question").then(function(ai){res.writeHead(200,{"Content-Type":"application/json"});res.end(JSON.stringify({response:ai}));}).catch(function(){res.writeHead(200,{"Content-Type":"application/json"});res.end(JSON.stringify({response:"Sorry, I ran into an error. Please try again."}));});
       }
     });
     return;
