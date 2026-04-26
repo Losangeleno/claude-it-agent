@@ -1,30 +1,29 @@
-name: Build and Deploy to Azure Container Apps
-
+﻿name: Deploy to Azure Container Apps
 on:
   push:
-    branches: [ main ]
-
+    branches: [ main, master ]
+  workflow_dispatch:
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-
-    - name: Log in to Azure
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-    - name: Build and push image via Azure Container Registry
-      run: |
-        az acr build \
-          --registry ca1e789bcd69acr \
-          --image claude-it-agent:${{ github.sha }} \
-          .
-
-    - name: Deploy to Azure Container Apps
-      run: |
-        az containerapp update \
-          --name claude-it-agent \
-          --resource-group claude-it-agent-rg \
-          --image ca1e789bcd69acr.azurecr.io/claude-it-agent:${{ github.sha }}
+      - uses: actions/checkout@v4
+      - uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - uses: azure/docker-login@v1
+        with:
+          login-server: claudeitagentacr.azurecr.io
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+      - run: |
+          docker build -t claudeitagentacr.azurecr.io/claude-it-agent:latest .
+          docker push claudeitagentacr.azurecr.io/claude-it-agent:latest
+      - uses: azure/container-apps-deploy-action@v1
+        with:
+          resourceGroup: claude-it-agent-rg
+          containerAppName: claude-it-agent
+          imageToDeploy: claudeitagentacr.azurecr.io/claude-it-agent:latest
+          registryUrl: claudeitagentacr.azurecr.io
+          registryUsername: ${{ secrets.ACR_USERNAME }}
+          registryPassword: ${{ secrets.ACR_PASSWORD }}
