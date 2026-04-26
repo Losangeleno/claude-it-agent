@@ -642,6 +642,8 @@ function formatChatResponse(toolName, rawText) {
 // â”€â”€ Chat HTML UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function callClaude(msg){return new Promise(function(resolve){var https=require('https');var body=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,system:'You are an expert IT support technician. Answer IT questions concisely and practically.',messages:[{role:'user',content:msg}]});var req=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(body)}},function(res){var d='';res.on('data',function(c){d+=c});res.on('end',function(){try{var p=JSON.parse(d);resolve(p.content&&p.content[0]?p.content[0].text:'No response.');}catch(e){resolve('AI error.');}});});req.on('error',function(e){resolve('Error: '+e.message);});req.write(body);req.end();});}
+
+function callClaude(msg){return new Promise(function(resolve){var https=require('https');var body=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,system:'You are an expert IT support technician for an organization using Microsoft 365, Windows 11, Cisco, and enterprise hardware. Answer helpfully and concisely.',messages:[{role:'user',content:msg}]});var req=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(body)}},function(res){var d='';res.on('data',function(chunk){d+=chunk});res.on('end',function(){try{var p=JSON.parse(d);resolve(p.content&&p.content[0]?p.content[0].text:'No response.');}catch(e){resolve('AI parse error.');}});});req.on('error',function(e){resolve('AI error: '+e.message);});req.write(body);req.end();});}
 var CHAT_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -915,6 +917,9 @@ const server = http.createServer(function(reqHttp, res) {
           }
 
           var response = formatChatResponse(route.tool, rawText);
+          if(!response||response==='No response received.'||response==='No results found.'){
+            return callClaude(message).then(function(ai){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({response:ai}));});
+          }
           res.writeHead(200, {"Content-Type":"application/json"});
           res.end(JSON.stringify({response: response}));
         }).catch(function(e) {
