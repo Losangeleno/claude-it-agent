@@ -1,7 +1,6 @@
 /**
 
-const sp = require('./sharepoint-proxy');
-sp.validateConfig();
+
  * app.js â€” Claude IT Agent (Remote MCP Server)
  * Runs on Azure App Service. Exposes all IT Agent tools over
  * MCP SSE transport so Claude web, desktop, and mobile can connect.
