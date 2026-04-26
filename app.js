@@ -1,4 +1,4 @@
-/**
+﻿/**
 
 const sp = require('./sharepoint-proxy');
 sp.validateConfig();
@@ -640,6 +640,8 @@ function formatChatResponse(toolName, rawText) {
 }
 
 // â”€â”€ Chat HTML UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function callClaude(msg){return new Promise(function(resolve){var https=require('https');var body=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,system:'You are an expert IT support technician. Answer IT questions concisely and practically.',messages:[{role:'user',content:msg}]});var req=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(body)}},function(res){var d='';res.on('data',function(c){d+=c});res.on('end',function(){try{var p=JSON.parse(d);resolve(p.content&&p.content[0]?p.content[0].text:'No response.');}catch(e){resolve('AI error.');}});});req.on('error',function(e){resolve('Error: '+e.message);});req.write(body);req.end();});}
 var CHAT_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -864,7 +866,7 @@ const server = http.createServer(function(reqHttp, res) {
         }
 
         handleTool(route.tool, route.args).then(function(result) {
-          var rawText = result.content && result.content[0] && result.content[0].text || "";
+          var rawText = result.content && result.content[0] && result.content[0].text || ""; if(!rawText||rawText===""||rawText==="[]"||rawText==="null"){return callClaude(message).then(function(ai){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({response:ai}));return;});}
 
           // KB returned file list â€” read top article immediately
           if (route.tool === "search_kb" && rawText.startsWith("[")) {
