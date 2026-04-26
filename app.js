@@ -620,20 +620,20 @@ function formatChatResponse(toolName, rawText) {
     if(Array.isArray(data)&&data.length===0) return "No results found.";
     if(Array.isArray(data)) {
       if(toolName==="get_intune_devices"||toolName==="get_noncompliant_devices") {
-        return (toolName==="get_noncompliant_devices"?"âš ï¸ ":"ðŸ“± ")+(data.length)+" device(s) found:\n\n"+data.map(function(d){return "ðŸ“± "+d.name+"\n   ðŸ‘¤ "+(d.user||d.email||"Unknown")+"\n   ðŸ’» "+(d.os||"")+"\n   "+(d.compliance==="compliant"?"âœ…":"âš ï¸")+" "+d.compliance+"\n   ðŸ• Last sync: "+(d.lastSync?new Date(d.lastSync).toLocaleString():"Unknown");}).join("\n\n");
+        return (toolName==="get_noncompliant_devices"?"âš ï¸ ":"📱 ")+(data.length)+" device(s) found:\n\n"+data.map(function(d){return "📱 "+d.name+"\n   👤 "+(d.user||d.email||"Unknown")+"\n   💻 "+(d.os||"")+"\n   "+(d.compliance==="compliant"?"âœ…":"âš ï¸")+" "+d.compliance+"\n   🕐 Last sync: "+(d.lastSync?new Date(d.lastSync).toLocaleString():"Unknown");}).join("\n\n");
       }
-      if(toolName==="search_users") return "ðŸ‘¥ "+data.length+" user(s) found:\n\n"+data.map(function(u){return "ðŸ‘¤ "+u.name+"\n   "+u.upn+"\n   "+(u.dept||"No department")+" | "+(u.enabled?"âœ… Active":"ðŸ”´ Disabled");}).join("\n\n");
-      if(toolName==="get_channel_messages") return "ðŸ’¬ Recent Teams messages:\n\n"+data.map(function(msg){return "â€¢ "+msg.from+" ("+new Date(msg.time).toLocaleString()+"):\n  "+msg.message;}).join("\n\n");
-      if(toolName==="search_kb") return "ðŸ“š "+data.length+" KB article(s) found:\n\n"+data.map(function(f,i){return (i+1)+". ðŸ“„ "+f.name.replace(".md","").replace(/-/g," ")+"\n   Library: "+(f.library||"KB");}).join("\n\n")+"\n\nAsk me to read any of these articles for details.";
-      if(toolName==="get_device_compliance") return "ðŸ” Compliance status:\n\n"+data.map(function(d){return "ðŸ“± "+d.device+"\n   "+(d.compliance==="compliant"?"âœ… Compliant":"âš ï¸ "+d.compliance)+"\n   ðŸ’» "+d.os+"\n   ðŸ” Encrypted: "+(d.encrypted?"Yes":"No")+"\n   ðŸ• "+new Date(d.lastSync).toLocaleString();}).join("\n\n");
-      if(toolName==="get_user_groups") return "ðŸ·ï¸ Group memberships:\n\n"+data.map(function(g){return "â€¢ "+g.name+(g.description?"\n  "+g.description:"");}).join("\n\n");
-      if(toolName==="get_sign_in_logs") return "ðŸ” Recent sign-ins:\n\n"+data.slice(0,8).map(function(s){return "â€¢ "+(s.userDisplayName||s.userPrincipalName||"Unknown")+"\n  App: "+(s.appDisplayName||"Unknown")+"\n  IP: "+(s.ipAddress||"Unknown")+"\n  "+(s.status&&s.status.errorCode===0?"âœ… Success":"âŒ Failed")+"\n  ðŸ• "+new Date(s.createdDateTime).toLocaleString();}).join("\n\n");
+      if(toolName==="search_users") return "👥 "+data.length+" user(s) found:\n\n"+data.map(function(u){return "👤 "+u.name+"\n   "+u.upn+"\n   "+(u.dept||"No department")+" | "+(u.enabled?"âœ… Active":"🔴 Disabled");}).join("\n\n");
+      if(toolName==="get_channel_messages") return "💬 Recent Teams messages:\n\n"+data.map(function(msg){return "â€¢ "+msg.from+" ("+new Date(msg.time).toLocaleString()+"):\n  "+msg.message;}).join("\n\n");
+      if(toolName==="search_kb") return "🔚 "+data.length+" KB article(s) found:\n\n"+data.map(function(f,i){return (i+1)+". 📄 "+f.name.replace(".md","").replace(/-/g," ")+"\n   Library: "+(f.library||"KB");}).join("\n\n")+"\n\nAsk me to read any of these articles for details.";
+      if(toolName==="get_device_compliance") return "🔍 Compliance status:\n\n"+data.map(function(d){return "📱 "+d.device+"\n   "+(d.compliance==="compliant"?"âœ… Compliant":"âš ï¸ "+d.compliance)+"\n   💻 "+d.os+"\n   🔐 Encrypted: "+(d.encrypted?"Yes":"No")+"\n   🕐 "+new Date(d.lastSync).toLocaleString();}).join("\n\n");
+      if(toolName==="get_user_groups") return "🏷ï¸ Group memberships:\n\n"+data.map(function(g){return "â€¢ "+g.name+(g.description?"\n  "+g.description:"");}).join("\n\n");
+      if(toolName==="get_sign_in_logs") return "🔐 Recent sign-ins:\n\n"+data.slice(0,8).map(function(s){return "â€¢ "+(s.userDisplayName||s.userPrincipalName||"Unknown")+"\n  App: "+(s.appDisplayName||"Unknown")+"\n  IP: "+(s.ipAddress||"Unknown")+"\n  "+(s.status&&s.status.errorCode===0?"âœ… Success":"âŒ Failed")+"\n  🕐 "+new Date(s.createdDateTime).toLocaleString();}).join("\n\n");
       if(toolName==="get_intune_apps") return "ðŸ“¦ "+data.length+" app(s) deployed:\n\n"+data.map(function(a){return "â€¢ "+a.name+(a.publisher?"\n  Publisher: "+a.publisher:"")+(a.state?"\n  State: "+a.state:"");}).join("\n\n");
       return rawText;
     }
     // Single object
-    if(toolName==="get_user") return "ðŸ‘¤ "+data.displayName+"\nðŸ“§ "+data.upn+"\nðŸ¢ "+(data.department||"No department")+"\nðŸ’¼ "+(data.jobTitle||"No title")+"\n"+(data.accountEnabled?"âœ… Account active":"ðŸ”´ Account disabled")+"\nðŸ”‘ Password last changed: "+(data.lastPasswordChange?new Date(data.lastPasswordChange).toLocaleDateString():"Unknown");
-    if(toolName==="get_intune_device") return "ðŸ“± "+data.name+"\nðŸ‘¤ "+(data.user||data.email||"Unknown")+"\nðŸ’» "+(data.os||"")+"\nðŸ”§ "+(data.model||"")+"\nðŸ”¢ Serial: "+(data.serial||"Unknown")+"\n"+(data.compliance==="compliant"?"âœ… Compliant":"âš ï¸ "+data.compliance)+"\nðŸ” Encrypted: "+(data.encrypted?"Yes":"No")+"\nðŸ’¾ Storage: "+(data.storage?data.storage.freeGB+" GB free of "+data.storage.totalGB+" GB":"Unknown")+"\nðŸ• Last sync: "+(data.lastSync?new Date(data.lastSync).toLocaleString():"Unknown");
+    if(toolName==="get_user") return "👤 "+data.displayName+"\nðŸ“§ "+data.upn+"\nðŸ¢ "+(data.department||"No department")+"\nðŸ’¼ "+(data.jobTitle||"No title")+"\n"+(data.accountEnabled?"âœ… Account active":"🔴 Account disabled")+"\nðŸ”‘ Password last changed: "+(data.lastPasswordChange?new Date(data.lastPasswordChange).toLocaleDateString():"Unknown");
+    if(toolName==="get_intune_device") return "📱 "+data.name+"\n👤 "+(data.user||data.email||"Unknown")+"\n💻 "+(data.os||"")+"\n🔧 "+(data.model||"")+"\n🔢 Serial: "+(data.serial||"Unknown")+"\n"+(data.compliance==="compliant"?"âœ… Compliant":"âš ï¸ "+data.compliance)+"\n🔐 Encrypted: "+(data.encrypted?"Yes":"No")+"\nðŸ’¾ Storage: "+(data.storage?data.storage.freeGB+" GB free of "+data.storage.totalGB+" GB":"Unknown")+"\n🕐 Last sync: "+(data.lastSync?new Date(data.lastSync).toLocaleString():"Unknown");
     return rawText;
   } catch(e) { return rawText; }
 }
@@ -679,7 +679,7 @@ button:active{background:#005a9e}
 <body>
 <header>
   <div class="dot"></div>
-  <h1>ðŸ”§ IT Agent</h1>
+  <h1>🔧 IT Agent</h1>
   <span>Field Support</span>
 </header>
 <div id="msgs">
@@ -817,7 +817,7 @@ const server = http.createServer(function(reqHttp, res) {
 
           // Script mode â€” lead with code
           if (wantsScript && codeBlocks.length > 0) {
-            response += "ðŸ’» Script / Command Line:\n\n";
+            response += "💻 Script / Command Line:\n\n";
             codeBlocks.slice(0,2).forEach(function(c,i){
               response += (i>0?"---\n":"")+c+"\n\n";
             });
@@ -842,7 +842,7 @@ const server = http.createServer(function(reqHttp, res) {
 
           // If GUI mode and no script shown yet, append a script option at end
           if (!wantsScript && codeBlocks.length > 0) {
-            response += "\n\nðŸ’» Script alternative:\n"+codeBlocks[0].substring(0,600);
+            response += "\n\n💻 Script alternative:\n"+codeBlocks[0].substring(0,600);
           }
 
           return response.trim().substring(0,3500) + (response.length>3500 ? "\n\n[Reply 'continue' for more details]" : "");
@@ -860,7 +860,7 @@ const server = http.createServer(function(reqHttp, res) {
             var combined = articles.map(function(a){return a.text;}).join("\n\n---\n\n");
             var processed = processArticle(combined, message);
             var sources = articles.map(function(a){return "â€¢ "+a.name.replace(".md","").replace(/-/g," ");}).join("\n");
-            var response = (prefix||"")+"ðŸ“š Sources:\n"+sources+"\n\n"+processed;
+            var response = (prefix||"")+"🔚 Sources:\n"+sources+"\n\n"+processed;
             res.writeHead(200,{"Content-Type":"application/json"});
             res.end(JSON.stringify({response:response}));
           });
@@ -890,7 +890,7 @@ const server = http.createServer(function(reqHttp, res) {
               if (t2.startsWith("[")) {
                 try {
                   var files2 = JSON.parse(t2);
-                  if (files2.length > 0) return readAndRespond(files2, detectedVendor ? "ðŸ“š Sources: Microsoft Learn + " + detectedVendor.toUpperCase() + " Support\n\n" : "ðŸ“š Source: Microsoft Learn\n\n");
+                  if (files2.length > 0) return readAndRespond(files2, detectedVendor ? "🔚 Sources: Microsoft Learn + " + detectedVendor.toUpperCase() + " Support\n\n" : "🔚 Source: Microsoft Learn\n\n");
                 } catch(e) {}
               }
               res.writeHead(200, {"Content-Type":"application/json"});
@@ -907,7 +907,7 @@ const server = http.createServer(function(reqHttp, res) {
               if (t2.startsWith("[")) {
                 try {
                   var files2 = JSON.parse(t2);
-                  if (files2.length > 0) return readAndRespond(files2, "ðŸ“š Source: " + detectedVendor.toUpperCase() + " Support\n\n");
+                  if (files2.length > 0) return readAndRespond(files2, "🔚 Source: " + detectedVendor.toUpperCase() + " Support\n\n");
                 } catch(e) {}
               }
               res.writeHead(200, {"Content-Type":"application/json"});
