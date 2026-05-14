@@ -12,6 +12,9 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
       - name: Build and push via ACR
-        run: az acr build --registry claudeitagentacr --image claude-it-agent:latest --no-cache .
+        run: |
+          IMAGE_TAG=claude-it-agent:${{ github.sha }}
+          az acr build --registry claudeitagentacr --image $IMAGE_TAG .
+          az acr build --registry claudeitagentacr --image claude-it-agent:latest .
       - name: Deploy
-        run: az containerapp update --name claude-it-agent --resource-group claude-it-agent-rg --image claudeitagentacr.azurecr.io/claude-it-agent:latest
+        run: az containerapp update --name claude-it-agent --resource-group claude-it-agent-rg --image claudeitagentacr.azurecr.io/claude-it-agent:${{ github.sha }}
