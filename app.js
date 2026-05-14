@@ -14,13 +14,13 @@
 
 const https  = require("https");
 const http   = require("http");
-const crypto = require("crypto");
+const crypto = require("crypto");h
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT            = process.env.PORT || 3000;
 const TENANT_ID       = "e876d5db-a9f8-4e71-abc1-dcee4d8b0578";
 const CLIENT_ID       = "50d28fcf-1e66-452f-be81-36b40b640605";
-const CLIENT_SECRET   = "OCy8Q~qnTAqtSfK.8bIdnKVqcCv46zMFGkIhQbtc";
+const CLIENT_SECRET   = "OCy8Q-qnTAqtSFK.8bIdnKVqcCv46zMFGkIhQbtc";
 const GRAPH_CLIENT_ID = "9c823e8e-5ce1-480c-8240-e19f6b23512e";
 const GRAPH_CLIENT_SECRET = "pMN8Q~7qNKr6pjEc4j9FLTHBA74rH.CwjwnjmbAg";
 const TENANT_NAME     = "ClaudeITAgent";
@@ -329,7 +329,7 @@ const TOOLS = [
 // ── Tool handlers ─────────────────────────────────────────────────────────────
 function handleTool(name, args) {
   // KB tools
-  if(name==="search_kb"){return getSiteId().then(function(id){return graph("/sites/"+id+"/drive/root/search(q='"+encodeURIComponent(args.query)+"')");}).then(function(d){var r=(d.value||[]).slice(0,8).map(function(f){return{name:f.name,id:f.id,driveId:f.parentReference&&f.parentReference.driveId,library:f.parentReference&&f.parentReference.name};});if(r.length)return{content:[{type:"text",text:JSON.stringify(r,null,2)}]};// Auto-fallback: KB empty → pull from Microsoft Learn and upload
+  if(name==="search_kb"){return getSiteId().then(function(id){return graphPost("/search/query",{requests:[{entityTypes:["driveItem"],query:{queryString:args.query},from:0,size:25}]}).then(function(sr){var hits=((((sr.value||[])[0]||{}).hitsContainers||[])[0]||{}).hits||[];return{value:hits.map(function(h){return{name:h.resource.name,id:h.resource.id,parentReference:h.resource.parentReference};})};});}).then(function(d){var r=(d.value||[]).slice(0,8).map(function(f){return{name:f.name,id:f.id,driveId:f.parentReference&&f.parentReference.driveId,library:f.parentReference&&f.parentReference.name};});if(r.length)return{content:[{type:"text",text:JSON.stringify(r,null,2)}]};// Auto-fallback: KB empty → pull from Microsoft Learn and upload
     return syncLearnTopicToKB(args.query,null,3).then(function(sync){if(sync.uploaded>0){return{content:[{type:"text",text:"KB had no results. Auto-synced "+sync.uploaded+" article(s) from Microsoft Learn into "+sync.library+":\n"+sync.articles.map(function(a){return"• "+a.title+" → "+a.file;}).join("\n")+"\n\nSearch your KB again to retrieve the content."}]};}return{content:[{type:"text",text:"No results in KB and no matching Microsoft Learn articles found for: "+args.query}]};});});}
   if(name==="sync_learn_to_kb"){return syncLearnTopicToKB(args.topic,args.library,args.max_articles||3).then(function(r){var msg=r.uploaded>0?"Synced "+r.uploaded+" article(s) to "+r.library+":\n"+r.articles.map(function(a){return"• "+a.title+" ("+a.file+")";}).join("\n"):"Nothing uploaded. Skipped: "+r.skipped+" (no content or upload error).";return{content:[{type:"text",text:msg}]};}).catch(function(e){return{content:[{type:"text",text:"sync_learn_to_kb error: "+e.message}]};});}
   // Intune / Device Management tools
