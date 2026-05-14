@@ -676,14 +676,26 @@ button:active{background:#005a9e}
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:#2a2d3e;border-radius:4px}
+
+.role-bar{display:flex;gap:6px;padding:8px 18px;background:#0d1526;border-bottom:1px solid #1e2a3a;flex-shrink:0;overflow-x:auto}
+.role-pill{padding:5px 14px;border-radius:20px;border:1px solid #2a3a4e;background:transparent;color:#8aa0b8;font-size:12px;cursor:pointer;white-space:nowrap;transition:all .2s;font-family:inherit}
+.role-pill:hover{border-color:#0078d4;color:#60a5fa}
+.role-pill.active{background:#0078d4;border-color:#0078d4;color:#fff;font-weight:600}
 </style>
 </head>
 <body>
 <header>
   <div class="dot"></div>
   <h1>🔧 IT Agent</h1>
-  <span>Field Support</span>
+  <span id="role-label">All Roles</span>
 </header>
+<div class="role-bar">
+  <button class="role-pill active" onclick="setRole('all',this)">All</button>
+  <button class="role-pill" onclick="setRole('l1',this)">L1 Help Desk</button>
+  <button class="role-pill" onclick="setRole('l2',this)">L2 Field Tech</button>
+  <button class="role-pill" onclick="setRole('l3',this)">L3 Sys Admin</button>
+  <button class="role-pill" onclick="setRole('l4',this)">L4 Architect</button>
+</div>
 <div id="msgs">
   <div class="bubble agent">Hi! I'm your IT Knowledge Agent. Ask me anything — devices, users, KB articles, service health, or vendor troubleshooting.
 <div class="chips">
@@ -702,6 +714,15 @@ button:active{background:#005a9e}
 </footer>
 <script>
 var API_KEY='claudeITAgent2026';
+var activeRole='all';
+var ROLE_LABELS={all:'All Roles',l1:'L1 Help Desk',l2:'L2 Field Tech',l3:'L3 Sys Admin',l4:'L4 Architect'};
+function setRole(r,el){
+  activeRole=r;
+  document.querySelectorAll('.role-pill').forEach(function(p){p.classList.remove('active');});
+  el.classList.add('active');
+  var lbl=document.getElementById('role-label');
+  if(lbl)lbl.textContent=ROLE_LABELS[r]||r;
+}
 function ask(t){document.getElementById('inp').value=t;send()}
 function send(){
   var inp=document.getElementById('inp');
@@ -710,7 +731,7 @@ function send(){
   inp.value='';
   addBubble(msg,'user');
   var loader=addBubble('Thinking...','agent loading');
-  fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+API_KEY},body:JSON.stringify({message:msg})})
+  fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+API_KEY},body:JSON.stringify({message:msg,role:activeRole})})
     .then(function(r){return r.json()})
     .then(function(d){loader.remove();addBubble(d.response||'No response','agent')})
     .catch(function(e){loader.remove();addBubble('Error: '+e.message,'agent')});
@@ -763,6 +784,16 @@ const server = http.createServer(function(reqHttp, res) {
       try {
         var parsed = JSON.parse(chatBody);
         var message = parsed.message || "";
+        var role = parsed.role || 'all';
+        var ROLE_PROMPTS = {
+          l1: 'ROLE: L1 Help Desk. Respond with simple step-by-step numbered instructions. Use plain language, no jargon. Focus on quick fixes a non-technical user can follow. Keep it brief.',
+          l2: 'ROLE: L2 Field Tech. Respond with a practical checklist of on-site steps. Include specific tools, commands, and physical checks. Format as numbered checklist.',
+          l3: 'ROLE: L3 Sys Admin. Respond with commands to run, registry paths, PowerShell scripts, and technical configuration steps. Be precise and technical.',
+          l4: 'ROLE: L4 Architect. Respond with root-cause analysis, infrastructure-level solutions, policy recommendations, and long-term fix strategies.',
+          all: ''
+        };
+        var rolePrefix = role && ROLE_PROMPTS[role] ? ROLE_PROMPTS[role] + '\n\nQuery: ' : '';
+        if (rolePrefix) message = rolePrefix + message;
         if (!message.trim()) {
           res.writeHead(400, {"Content-Type":"application/json"});
           res.end(JSON.stringify({error:"Empty message"}));
