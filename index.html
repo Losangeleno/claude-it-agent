@@ -1,75 +1,91 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IT Knowledge Agent</title>
+<title>Claude IT Support Agent</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0b1220; color: #e6edf7; height: 100vh; display: flex; flex-direction: column; }
-  #header { background: #111a2c; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid #1f2a44; }
-  #header h1 { font-size: 18px; color: #4ea1ff; font-weight: 600; }
-  #header span.sub { font-size: 12px; color: #8aa0c2; }
-  #messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 15px; }
+  body { font-family: -apple-system, sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; }
+  #header { background: #16213e; padding: 15px 20px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid #0f3460; }
+  #header .title h1 { font-size: 18px; color: #4ea1ff; }
+  #header .title span { font-size: 12px; color: #888; display: block; margin-top: 2px; }
+  .status { font-size: 11px; padding: 4px 10px; border-radius: 10px; }
+  .online { background: #1a472a; color: #51cf66; }
+  .offline { background: #3b1219; color: #ff6b6b; }
+
+  /* Role bar */
+  .role-bar { background: #16213e; padding: 10px 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #0f3460; overflow-x: auto; }
+  .role-bar .label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0; }
+  .role-btn { background: transparent; border: 1px solid #2a3a5e; color: #cdd; padding: 6px 14px; border-radius: 20px; font-size: 13px; cursor: pointer; white-space: nowrap; transition: all 0.15s; }
+  .role-btn:hover { border-color: #4ea1ff; color: #fff; }
+  .role-btn.active { background: #1e6fd9; border-color: #4ea1ff; color: #fff; font-weight: 600; }
+
+  /* Messages */
+  #messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
   .msg { max-width: 85%; padding: 12px 16px; border-radius: 18px; line-height: 1.5; font-size: 15px; }
-  .user { background: #1c4e9b; align-self: flex-end; border-bottom-right-radius: 4px; }
-  .agent { background: #131c33; align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid #1f2a44; }
-  .agent pre { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px; background: #0a1022; padding: 10px; border-radius: 8px; margin-top: 8px; }
-  .thinking { color: #8aa0c2; font-style: italic; }
+  .user { background: #1e6fd9; align-self: flex-end; border-bottom-right-radius: 4px; }
+  .agent { background: #16213e; align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid #0f3460; }
+  .agent pre { white-space: pre-wrap; font-family: monospace; font-size: 13px; background: #0a0a1a; padding: 10px; border-radius: 8px; margin-top: 8px; }
+  .thinking { color: #888; font-style: italic; }
+  .error { background: #3b1219; border-color: #5a1a23; }
 
-  /* Welcome card matching screenshot */
-  .welcome-card { background: #131c33; border: 1px solid #1f2a44; border-radius: 14px; padding: 22px 22px 18px 22px; max-width: 760px; margin: 0 auto 6px auto; position: relative; overflow: hidden; }
-  .welcome-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #4ea1ff, #6f8cff); }
-  .welcome-card h2 { font-size: 18px; color: #e6edf7; margin-bottom: 10px; font-weight: 600; }
-  .welcome-card p { font-size: 14px; color: #b8c5db; line-height: 1.55; margin-bottom: 8px; }
-  .welcome-card p.cta { color: #8aa0c2; font-style: italic; margin-top: 12px; margin-bottom: 14px; }
-  .suggested { display: flex; flex-direction: column; gap: 10px; max-width: 760px; margin: 0 auto; }
-  .suggested-btn { background: transparent; border: 1px solid #2b6cb0; color: #cfe1ff; padding: 12px 18px; border-radius: 999px; font-size: 14px; cursor: pointer; text-align: left; transition: background .15s, border-color .15s; }
-  .suggested-btn:hover { background: rgba(46,108,176,0.15); border-color: #4ea1ff; }
-  .suggested-btn:active { background: rgba(46,108,176,0.25); }
+  /* Welcome card */
+  .welcome-card { align-self: center; width: 100%; max-width: 720px; background: #16213e; border: 1px solid #0f3460; border-top: 2px solid #4ea1ff; border-radius: 8px; padding: 20px; }
+  .welcome-card h2 { font-size: 16px; color: #fff; margin-bottom: 8px; }
+  .welcome-card p { font-size: 14px; color: #bbb; line-height: 1.5; margin-bottom: 8px; }
+  .welcome-card .hint { font-size: 13px; color: #888; font-style: italic; margin: 14px 0 10px; }
+  .suggest-list { display: flex; flex-direction: column; gap: 8px; }
+  .suggest-btn { background: #0f3460; border: 1px solid #1e6fd9; color: #eee; padding: 10px 16px; border-radius: 24px; font-size: 14px; cursor: pointer; text-align: left; transition: all 0.15s; }
+  .suggest-btn:hover { background: #1e6fd9; border-color: #4ea1ff; }
 
-  #input-area { background: #111a2c; padding: 14px; border-top: 1px solid #1f2a44; display: flex; gap: 10px; align-items: flex-end; }
-  #query { flex: 1; background: #0f1830; border: 1px solid #1f2a44; border-radius: 22px; padding: 12px 16px; color: #e6edf7; font-size: 15px; outline: none; resize: none; max-height: 120px; }
-  #query::placeholder { color: #6c7e9b; }
-  #query:focus { border-color: #4ea1ff; }
-  .btn { background: #2b6cb0; border: none; border-radius: 50%; width: 44px; height: 44px; color: white; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .btn:active { background: #1e4f87; }
-  .btn:hover { background: #3477c1; }
-  #mic-btn { background: #1c2740; }
+  /* Input */
+  #input-area { background: #16213e; padding: 15px; border-top: 1px solid #0f3460; display: flex; gap: 10px; align-items: flex-end; }
+  #query { flex: 1; background: #0f3460; border: none; border-radius: 20px; padding: 12px 16px; color: #eee; font-size: 15px; outline: none; resize: none; max-height: 120px; }
+  #query::placeholder { color: #666; }
+  .btn { background: #1e6fd9; border: none; border-radius: 50%; width: 44px; height: 44px; color: white; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .btn:active { background: #1758a8; }
+  #mic-btn { background: #0f3460; }
   #mic-btn.listening { background: #e94560; animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
-  .status { font-size: 11px; padding: 4px 10px; border-radius: 10px; font-weight: 500; }
-  .online { background: #133b22; color: #51cf66; }
-  .offline { background: #3b1219; color: #ff6b6b; }
 </style>
 </head>
 <body>
 
 <div id="header">
-  <div>
+  <div class="title">
     <h1>Claude IT Support Agent</h1>
-    <span class="sub">Manuel Tucker • ClaudeITAgent</span>
+    <span>Manuel Tucker • ClaudeITAgent</span>
   </div>
-  <span id="status" class="status offline">Checking...</span>
+  <span id="status" class="status offline">● Checking...</span>
+</div>
+
+<div class="role-bar">
+  <span class="label">View as:</span>
+  <button class="role-btn active" data-role="all" onclick="setRole(this)">All</button>
+  <button class="role-btn" data-role="L1" onclick="setRole(this)">L1 Help Desk</button>
+  <button class="role-btn" data-role="L2" onclick="setRole(this)">L2 Field Tech</button>
+  <button class="role-btn" data-role="L3" onclick="setRole(this)">L3 Sys Admin</button>
+  <button class="role-btn" data-role="L4" onclick="setRole(this)">L4 Architect</button>
 </div>
 
 <div id="messages">
-  <div class="welcome-card">
+  <div class="welcome-card" id="welcome-card">
     <h2>Welcome to the Claude IT Support Agent demo!</h2>
     <p>I can answer IT questions, retrieve step-by-step procedures from the knowledge base, check Microsoft 365 service health, look up devices and users, and create field tech workflow checklists.</p>
-    <p class="cta">Try one of the suggested questions below or ask your own.</p>
-    <div class="suggested">
-      <button class="suggested-btn" onclick="askSuggested('New user full workstation + Cisco phone deployment')">New user full workstation + Cisco phone deployment</button>
-      <button class="suggested-btn" onclick="askSuggested('No network connectivity at user desk')">No network connectivity at user desk</button>
-      <button class="suggested-btn" onclick="askSuggested('Printer install / offline / cannot print issue')">Printer install / offline / cannot print issue</button>
-      <button class="suggested-btn" onclick="askSuggested('Conference room / Teams / Cisco video room failure')">Conference room / Teams / Cisco video room failure</button>
-      <button class="suggested-btn" onclick="askSuggested('User laptop replacement / migration')">User laptop replacement / migration</button>
+    <p class="hint">Try one of the suggested questions below or ask your own.</p>
+    <div class="suggest-list">
+      <button class="suggest-btn" onclick="suggest(this.textContent)">New user full workstation + Cisco phone deployment</button>
+      <button class="suggest-btn" onclick="suggest(this.textContent)">No network connectivity at user desk</button>
+      <button class="suggest-btn" onclick="suggest(this.textContent)">Printer install / offline / cannot print issue</button>
+      <button class="suggest-btn" onclick="suggest(this.textContent)">Conference room / Teams / Cisco video room failure</button>
+      <button class="suggest-btn" onclick="suggest(this.textContent)">User laptop replacement / migration</button>
     </div>
   </div>
 </div>
 
 <div id="input-area">
-  <textarea id="query" placeholder="Ask your IT question..." rows="1" 
+  <textarea id="query" placeholder="Ask your IT question..." rows="1"
     onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendQuery()}"
     oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
   <button class="btn" id="mic-btn" onclick="toggleMic()" title="Voice input">🎤</button>
@@ -80,6 +96,28 @@
 // ── Configuration ─────────────────────────────────────────
 const AGENT_URL = window.location.origin;
 
+// ── Role definitions ──────────────────────────────────────
+// Each role re-frames how Claude should articulate the response.
+const ROLE_PROMPTS = {
+  all: "",
+  L1:  "Respond as if briefing an L1 Help Desk technician. Give a clean, step-by-step walkthrough of how to fix the problem. Keep instructions concise, numbered, and oriented to a phone-support or first-call resolution context. Avoid deep architectural detail.",
+  L2:  "Respond as if briefing an L2 Field Tech. Provide the full deployment checklist: pre-checks, materials/tools required, every on-site step in order, validation tests, and rollback. Assume the tech is on-premises with hands on the equipment.",
+  L3:  "Respond as if briefing an L3 Sys Admin. Lead with verification commands (CLI / PowerShell / shell) and root-cause hooks: what to inspect in logs, registry, configs, or services. Include exact commands they can paste, and what each output means.",
+  L4:  "Respond as if briefing an L4 Architect. Lead with the design rationale: why the system is built this way, trade-offs, dependencies, and how this issue interacts with the broader topology. Reference standards, patterns, and long-term implications rather than step-by-step fixes."
+};
+let currentRole = "all";
+
+function setRole(btn) {
+  currentRole = btn.dataset.role;
+  document.querySelectorAll(".role-btn").forEach(function(b) { b.classList.remove("active"); });
+  btn.classList.add("active");
+}
+
+function buildPrefixedQuery(text) {
+  if (currentRole === "all" || !ROLE_PROMPTS[currentRole]) return text;
+  return "[Role: " + currentRole + " — " + ROLE_PROMPTS[currentRole] + "]\n\n" + text;
+}
+
 // ── Status Check ──────────────────────────────────────────
 async function checkStatus() {
   try {
@@ -87,7 +125,9 @@ async function checkStatus() {
     if (r.ok) {
       document.getElementById("status").className = "status online";
       document.getElementById("status").textContent = "● Online";
+      return;
     }
+    throw new Error("non-ok");
   } catch(e) {
     document.getElementById("status").className = "status offline";
     document.getElementById("status").textContent = "● Offline";
@@ -97,12 +137,18 @@ checkStatus();
 setInterval(checkStatus, 30000);
 
 // ── Message Display ───────────────────────────────────────
+function dismissWelcome() {
+  const w = document.getElementById("welcome-card");
+  if (w) w.remove();
+}
+
 function addMessage(text, type) {
+  dismissWelcome();
   const msgs = document.getElementById("messages");
   const div = document.createElement("div");
   div.className = "msg " + type;
-  
-  if (type === "agent" && text.startsWith("{") || text.startsWith("[")) {
+
+  if (type === "agent" && (text.startsWith("{") || text.startsWith("["))) {
     try {
       const parsed = JSON.parse(text);
       div.innerHTML = formatResult(parsed);
@@ -112,7 +158,7 @@ function addMessage(text, type) {
   } else {
     div.innerHTML = text.replace(/\n/g, "<br>");
   }
-  
+
   msgs.appendChild(div);
   msgs.scrollTop = msgs.scrollHeight;
   return div;
@@ -121,8 +167,8 @@ function addMessage(text, type) {
 function formatResult(data) {
   if (Array.isArray(data)) {
     return data.map(function(item) {
-      if (item.name) return "📄 " + item.name + (item.library ? " <small>("+item.library+")</small>" : "");
-      if (item.title) return "⚠️ <strong>" + item.title + "</strong>" + (item.service ? " — " + item.service : "") + (item.severity ? " ["+item.severity+"]" : "");
+      if (item.name) return "📄 " + item.name + (item.library ? " <small>(" + item.library + ")</small>" : "");
+      if (item.title) return "⚠️ <strong>" + item.title + "</strong>" + (item.service ? " — " + item.service : "") + (item.severity ? " [" + item.severity + "]" : "");
       return JSON.stringify(item);
     }).join("<br>");
   }
@@ -132,34 +178,27 @@ function formatResult(data) {
 // ── Smart Query Parser ────────────────────────────────────
 function parseQuery(text) {
   text = text.toLowerCase().trim();
-  
-  // Microsoft health
   if (text.match(/microsoft|office 365|m365|teams.*down|outlook.*down|sharepoint.*down|outage|health/)) {
-    return {action:"ms_service_health", params:{}, display:"Checking Microsoft 365 service health..."};
+    return { action: "ms_service_health", params: {}, display: "Checking Microsoft 365 service health..." };
   }
-  // Cisco advisories
   var ciscoMatch = text.match(/cisco\s+(\w+)/);
   if (ciscoMatch || text.includes("advisory") || text.includes("vulnerability")) {
     var product = ciscoMatch ? ciscoMatch[1] : "IOS";
-    return {action:"cisco_advisories", params:{product:product}, display:"Searching Cisco advisories for " + product + "..."};
+    return { action: "cisco_advisories", params: { product: product }, display: "Searching Cisco advisories for " + product + "..." };
   }
-  // List library
   var libMatch = text.match(/list\s+(\w+)|show\s+(\w+)\s+files|open\s+(\w+)/);
   if (libMatch) {
-    var lib = (libMatch[1]||libMatch[2]||libMatch[3]);
+    var lib = (libMatch[1] || libMatch[2] || libMatch[3]);
     lib = lib.charAt(0).toUpperCase() + lib.slice(1);
-    return {action:"list_library", params:{library:lib}, display:"Listing " + lib + " library..."};
+    return { action: "list_library", params: { library: lib }, display: "Listing " + lib + " library..." };
   }
-  // Cabling keywords
   if (text.match(/t568|cable|wir|color|jack|patch|cat6|cat5|crimp|punch|rj45/)) {
-    return {action:"search_kb", params:{query:text}, display:"Searching cabling knowledge base..."};
+    return { action: "search_kb", params: { query: text }, display: "Searching cabling knowledge base..." };
   }
-  // Troubleshooting keywords  
   if (text.match(/teams|outlook|printer|vpn|wifi|network|windows|onedrive|slow|not working|error|fix|troubleshoot/)) {
-    return {action:"search_kb", params:{query:text}, display:"Searching troubleshooting guides..."};
+    return { action: "search_kb", params: { query: text }, display: "Searching troubleshooting guides..." };
   }
-  // Default search
-  return {action:"search_kb", params:{query:text}, display:"Searching IT knowledge base..."};
+  return { action: "search_kb", params: { query: text }, display: "Searching IT knowledge base..." };
 }
 
 // ── Send Query ────────────────────────────────────────────
@@ -167,23 +206,32 @@ async function sendQuery() {
   const input = document.getElementById("query");
   const text = input.value.trim();
   if (!text) return;
-  
+
   input.value = "";
   input.style.height = "auto";
   addMessage(text, "user");
-  
+
   const parsed = parseQuery(text);
+  // Inject role-specific style hint into the params payload
+  parsed.params = parsed.params || {};
+  parsed.params.role = currentRole;
+  parsed.params.styleHint = ROLE_PROMPTS[currentRole] || "";
+  // For free-text search_kb queries, also prepend role guidance into the query text itself
+  if (parsed.action === "search_kb" && currentRole !== "all") {
+    parsed.params.query = buildPrefixedQuery(parsed.params.query || text);
+  }
+
   const thinking = addMessage("⏳ " + parsed.display, "agent thinking");
-  
+
   try {
     const response = await fetch(AGENT_URL + "/query", {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({action: parsed.action, params: parsed.params})
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: parsed.action, params: parsed.params, role: currentRole })
     });
     const data = await response.json();
     thinking.remove();
-    
+
     if (data.success) {
       var result = data.result;
       try {
@@ -193,41 +241,17 @@ async function sendQuery() {
         addMessage(result, "agent");
       }
     } else {
-      addMessage("❌ Error: " + data.error, "agent");
+      addMessage("❌ Error: " + data.error, "agent error");
     }
   } catch(e) {
     thinking.remove();
-    addMessage("❌ Cannot reach agent. Is your PC on?<br><small>" + e.message + "</small>", "agent");
+    addMessage("❌ Cannot reach agent. Is your PC on?<br><small>" + e.message + "</small>", "agent error");
   }
 }
 
-function askSuggested(text) {
-  const input = document.getElementById("query");
-  input.value = text;
+function suggest(text) {
+  document.getElementById("query").value = text;
   sendQuery();
-}
-
-function quickAsk(action, params, display) {
-  const thinking = addMessage("⏳ " + display + "...", "agent thinking");
-  fetch(AGENT_URL + "/query", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({action:action, params:params})
-  }).then(function(r){return r.json();}).then(function(data){
-    thinking.remove();
-    if (data.success) {
-      try {
-        addMessage(formatResult(JSON.parse(data.result)), "agent");
-      } catch(e) {
-        addMessage(data.result, "agent");
-      }
-    } else {
-      addMessage("Error: " + data.error, "agent");
-    }
-  }).catch(function(e){
-    thinking.remove();
-    addMessage("Cannot reach agent: " + e.message, "agent");
-  });
 }
 
 // ── Voice Input ───────────────────────────────────────────
