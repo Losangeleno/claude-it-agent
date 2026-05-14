@@ -1087,6 +1087,7 @@ const server = http.createServer(function(reqHttp, res) {
                 }
                 text += "Escalation: Raise a ticket at https://itportal.yourorg.com or call ext. 1234\n\n";
                 text += "Source: General IT best practice (no KB article found)";
+  if (role && role !== 'all') text = '[' + role.toUpperCase() + ' VIEW] ' + text;
                 sendResponse(text, "LOW");
               });
             });
