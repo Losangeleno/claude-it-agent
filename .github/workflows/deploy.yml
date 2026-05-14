@@ -12,6 +12,6 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
       - name: Build and push via ACR
-        run: az acr build --registry claudeitagentacr --image claude-it-agent:latest .
+        run: az acr build --registry claudeitagentacr --image claude-it-agent:latest --no-cache .
       - name: Deploy
         run: az containerapp update --name claude-it-agent --resource-group claude-it-agent-rg --image claudeitagentacr.azurecr.io/claude-it-agent:latest
