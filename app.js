@@ -1,15 +1,13 @@
 /**
-
-
- * app.js â€” Claude IT Agent (Remote MCP Server)
+ * app.js — Claude IT Agent (Remote MCP Server)
  * Runs on Azure App Service. Exposes all IT Agent tools over
  * MCP SSE transport so Claude web, desktop, and mobile can connect.
  *
  * Endpoints:
- *   GET  /sse      â€” MCP SSE connection (Claude connects here)
- *   POST /message  â€” MCP message handler
- *   GET  /health   â€” Health check (Azure App Service probe)
- *   POST /query    â€” Legacy REST API (backward compat)
+ *   GET  /sse      — MCP SSE connection (Claude connects here)
+ *   POST /message  — MCP message handler
+ *   GET  /health   — Health check (Azure App Service probe)
+ *   POST /query    — Legacy REST API (backward compat)
  */
 
 "use strict";
@@ -18,7 +16,7 @@ const https  = require("https");
 const http   = require("http");
 const crypto = require("crypto");
 
-// â”€â”€ Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Config ────────────────────────────────────────────────────────────────────
 const PORT            = process.env.PORT || 3000;
 const TENANT_ID       = "e876d5db-a9f8-4e71-abc1-dcee4d8b0578";
 const CLIENT_ID       = "50d28fcf-1e66-452f-be81-36b40b640605";
@@ -34,11 +32,11 @@ const TEAMS_WEBHOOK_URL = "https://claudeitagent.webhook.office.com/webhookb2/1d
 const TEAMS_TEAM_ID   = "1dede829-35a4-4d2b-96d4-ab4687aa13a5";
 const TEAMS_CHANNEL_ID = "19:h3O1iQ3KfOuqLoQKUtbWEa2lLMqHBwjX1qTlTK0lrqw1@thread.tacv2";
 
-// API key â€” Claude sessions must send this as Bearer token
+// API key — Claude sessions must send this as Bearer token
 // Change this to something secret before deploying
 const API_KEY = process.env.MCP_API_KEY || "claudeITAgent2026";
 
-// â”€â”€ Vendor support site configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Vendor support site configuration ────────────────────────────────────────
 const VENDOR_SITES = {
   cisco:   { domain: "cisco.com",         searchPath: "/c/en/us/search/index.html?query=", label: "Cisco Support" },
   dell:    { domain: "dell.com",           searchPath: "/support/home/search?query=",       label: "Dell Support" },
@@ -48,7 +46,7 @@ const VENDOR_SITES = {
   apple:   { domain: "support.apple.com",   searchPath: "/",                               label: "Apple Support" }
 };
 
-// Vendor-specific DDG search (site-scoped) â†’ parse top URLs â†’ fetch content
+// Vendor-specific DDG search (site-scoped) → parse top URLs → fetch content
 function searchVendorDocs(vendor, query, maxResults) {
   maxResults = maxResults || 3;
   var site = VENDOR_SITES[vendor.toLowerCase()];
@@ -80,7 +78,7 @@ function searchVendorDocs(vendor, query, maxResults) {
         while ((m = titleRx.exec(data)) !== null && matches.length < maxResults) {
           var href = m[1];
           var title = m[2].trim();
-          // DDG wraps URLs â€” extract the actual URL
+          // DDG wraps URLs — extract the actual URL
           try {
             var uddg = new URL("https://duckduckgo.com" + href);
             var actual = uddg.searchParams.get("uddg") || uddg.searchParams.get("u") || href;
@@ -160,7 +158,7 @@ function syncVendorDocsToKB(vendor, topic, library, maxArticles) {
   });
 }
 
-// â”€â”€ Microsoft Learn topic â†’ KB library mapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Microsoft Learn topic → KB library mapping ────────────────────────────────
 const LEARN_LIBRARY_MAP = {
   "windows": "Troubleshooting",
   "azure": "Troubleshooting",
@@ -186,7 +184,7 @@ function inferLibrary(topic) {
   return LEARN_LIBRARY_MAP["default"];
 }
 
-// â”€â”€ Fetch and convert a Microsoft Learn article to markdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Fetch and convert a Microsoft Learn article to markdown ──────────────────
 function fetchLearnArticle(url) {
   return fetchPageText(url, 6000).then(function(text) {
     if (!text || text.length < 100) return null;
@@ -195,7 +193,7 @@ function fetchLearnArticle(url) {
   });
 }
 
-// â”€â”€ Pull top Learn articles for a topic and upload to KB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Pull top Learn articles for a topic and upload to KB ─────────────────────
 function syncLearnTopicToKB(topic, library, maxArticles) {
   maxArticles = maxArticles || 3;
   return req({
@@ -259,24 +257,24 @@ function syncLearnTopicToKB(topic, library, maxArticles) {
   });
 }
 
-// â”€â”€ Token caches â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Token caches ──────────────────────────────────────────────────────────────
 let spToken=null,spExpiry=0,graphToken=null,graphExpiry=0;
 let ciscoToken=null,ciscoExpiry=0,siteId=null,cachedDrives=[];
 
-// â”€â”€ SSE sessions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const sessions = new Map(); // sessionId â†’ res (SSE response object)
+// ── SSE sessions ──────────────────────────────────────────────────────────────
+const sessions = new Map(); // sessionId → res (SSE response object)
 
-// â”€â”€ Core HTTP helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Core HTTP helper ──────────────────────────────────────────────────────────
 function req(o,b){return new Promise(function(res,rej){var r=https.request(o,function(re){var d="";re.on("data",function(c){d+=c;});re.on("end",function(){try{res({status:re.statusCode,body:JSON.parse(d)});}catch(e){res({status:re.statusCode,body:d});}});});r.on("error",rej);if(b)r.write(b);r.end();});}
 
-// â”€â”€ Token functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Token functions ───────────────────────────────────────────────────────────
 function getSPToken(){if(spToken&&Date.now()<spExpiry)return Promise.resolve(spToken);var b="grant_type=client_credentials&client_id="+encodeURIComponent(CLIENT_ID)+"&client_secret="+encodeURIComponent(CLIENT_SECRET)+"&scope="+encodeURIComponent("https://graph.microsoft.com/.default");return req({hostname:"login.microsoftonline.com",path:"/"+TENANT_ID+"/oauth2/v2.0/token",method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","Content-Length":Buffer.byteLength(b)}},b).then(function(r){spToken=r.body.access_token;spExpiry=Date.now()+(r.body.expires_in-60)*1000;return spToken;});}
 
 function getGraphToken(){if(graphToken&&Date.now()<graphExpiry)return Promise.resolve(graphToken);var b="grant_type=client_credentials&client_id="+encodeURIComponent(GRAPH_CLIENT_ID)+"&client_secret="+encodeURIComponent(GRAPH_CLIENT_SECRET)+"&scope="+encodeURIComponent("https://graph.microsoft.com/.default");return req({hostname:"login.microsoftonline.com",path:"/"+TENANT_ID+"/oauth2/v2.0/token",method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","Content-Length":Buffer.byteLength(b)}},b).then(function(r){graphToken=r.body.access_token;graphExpiry=Date.now()+(r.body.expires_in-60)*1000;return graphToken;});}
 
 function getCiscoToken(){if(ciscoToken&&Date.now()<ciscoExpiry)return Promise.resolve(ciscoToken);var b="grant_type=client_credentials&client_id="+encodeURIComponent(CISCO_KEY)+"&client_secret="+encodeURIComponent(CISCO_SECRET);return req({hostname:"id.cisco.com",path:"/oauth2/default/v1/token",method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","Content-Length":Buffer.byteLength(b)}},b).then(function(r){ciscoToken=r.body.access_token;ciscoExpiry=Date.now()+3500000;return ciscoToken;});}
 
-// â”€â”€ Graph helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Graph helpers ─────────────────────────────────────────────────────────────
 function graph(path){return getSPToken().then(function(t){return req({hostname:"graph.microsoft.com",path:"/v1.0"+path,method:"GET",headers:{Authorization:"Bearer "+t}});}).then(function(r){return r.body;});}
 
 function graphGet(path){return getGraphToken().then(function(t){return req({hostname:"graph.microsoft.com",path:"/v1.0"+path,method:"GET",headers:{Authorization:"Bearer "+t}});}).then(function(r){return r.body;});}
@@ -291,7 +289,7 @@ function getDrives(){if(cachedDrives.length)return Promise.resolve(cachedDrives)
 
 function fetchPageText(urlString,maxLen){maxLen=maxLen||2500;return new Promise(function(resolve){try{var u=new URL(urlString);if(u.protocol!=="https:"){resolve("");return;}var r=https.get({hostname:u.hostname,path:u.pathname+u.search,headers:{"User-Agent":"Mozilla/5.0","Accept":"text/html"}},function(res){if(res.statusCode>=300&&res.statusCode<400&&res.headers.location){resolve(fetchPageText(res.headers.location,maxLen));return;}var data="";res.on("data",function(c){data+=c;if(data.length>150000)res.destroy();});res.on("end",function(){var text=data.replace(/<script[\s\S]*?<\/script>/gi,"").replace(/<style[\s\S]*?<\/style>/gi,"").replace(/<[^>]+>/g," ").replace(/\s{2,}/g," ").trim();resolve(text.substring(0,maxLen));});});r.on("error",function(){resolve("");});r.setTimeout(12000,function(){r.destroy();resolve("");});}catch(e){resolve("");}});}
 
-// â”€â”€ Tools definition â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Tools definition ──────────────────────────────────────────────────────────
 const TOOLS = [
   {name:"search_kb",description:"Search IT Knowledge Base for scripts, runbooks, FAQs, assets, cabling, or troubleshooting guides",inputSchema:{type:"object",properties:{query:{type:"string"}},required:["query"]}},
   {name:"list_library",description:"List files in a library: Scripts, Runbooks, FAQs, Assets, Cabling, or Troubleshooting",inputSchema:{type:"object",properties:{library:{type:"string"}},required:["library"]}},
@@ -305,21 +303,21 @@ const TOOLS = [
   {name:"send_email",description:"Send an email from the IT agent",inputSchema:{type:"object",properties:{to:{type:"string"},subject:{type:"string"},body:{type:"string"},is_html:{type:"boolean"}},required:["to","subject","body"]}},
   {name:"upload_to_kb",description:"Upload a markdown file to the IT Knowledge Base",inputSchema:{type:"object",properties:{library:{type:"string"},filename:{type:"string"},content:{type:"string"}},required:["library","filename","content"]}},
   {name:"build_scenario",description:"Build a structured field troubleshooting scenario from a problem description",inputSchema:{type:"object",properties:{problem:{type:"string"}},required:["problem"]}},
-  // Phase 2 â€” Azure AD
+  // Phase 2 — Azure AD
   {name:"get_user",description:"Get an Azure AD user profile by email or object ID",inputSchema:{type:"object",properties:{user_id:{type:"string"}},required:["user_id"]}},
   {name:"search_users",description:"Search Azure AD users by name or email",inputSchema:{type:"object",properties:{query:{type:"string"},limit:{type:"number"}},required:["query"]}},
   {name:"get_user_groups",description:"Get all group memberships for an Azure AD user",inputSchema:{type:"object",properties:{user_id:{type:"string"}},required:["user_id"]}},
   {name:"list_devices",description:"List Azure AD / Intune-registered devices",inputSchema:{type:"object",properties:{filter:{type:"string"}}}},
   {name:"get_sign_in_logs",description:"Get recent Azure AD sign-in logs for a user",inputSchema:{type:"object",properties:{user_id:{type:"string"},limit:{type:"number"}}}},
-  // Phase 1 â€” Teams
+  // Phase 1 — Teams
   {name:"list_teams",description:"List all Microsoft Teams in the organisation",inputSchema:{type:"object",properties:{}}},
   {name:"list_channels",description:"List all channels in a Microsoft Team",inputSchema:{type:"object",properties:{team_id:{type:"string"}},required:["team_id"]}},
   {name:"get_channel_messages",description:"Read recent messages from a Teams channel",inputSchema:{type:"object",properties:{team_id:{type:"string"},channel_id:{type:"string"},limit:{type:"number"}},required:["team_id","channel_id"]}},
   {name:"send_channel_message",description:"Post a message to the IT Agent Teams channel",inputSchema:{type:"object",properties:{message:{type:"string"},html:{type:"boolean"}},required:["message"]}},
-  // Phase 3 â€” Microsoft Learn sync
+  // Phase 3 — Microsoft Learn sync
   {name:"sync_learn_to_kb",description:"Search Microsoft Learn for a topic and save the top articles to the IT Knowledge Base. Automatically picks the right library (Troubleshooting, Runbooks, FAQs).",inputSchema:{type:"object",properties:{topic:{type:"string",description:"The IT topic to search, e.g. 'Windows 11 Event Viewer', 'BitLocker recovery', 'Intune device enrollment'"},library:{type:"string",description:"Override target library: Troubleshooting, Runbooks, FAQs, Assets, Cabling. Leave blank for auto-detect."},max_articles:{type:"number",description:"Number of articles to sync (1-5, default 3)"}},required:["topic"]}},
   {name:"sync_vendor_docs",description:"Pull support documentation from Cisco, Dell, HP/HPE, Fujitsu, or Apple and save to the IT Knowledge Base.",inputSchema:{type:"object",properties:{vendor:{type:"string",enum:["cisco","dell","hp","hpe","fujitsu","apple"],description:"The vendor to search"},topic:{type:"string",description:"The support topic"},library:{type:"string",description:"Target KB library: Troubleshooting, Runbooks, FAQs. Default: Troubleshooting"},max_articles:{type:"number",description:"Number of articles to pull (1-5, default 3)"}},required:["vendor","topic"]}},
-  // Phase 4 â€” Intune / Device Management
+  // Phase 4 — Intune / Device Management
   {name:"get_intune_devices",description:"List all devices enrolled in Microsoft Intune. Filter by platform (windows, ios, macos, android), user, or compliance state.",inputSchema:{type:"object",properties:{platform:{type:"string",description:"Filter by OS: windows, ios, macos, android. Leave blank for all."},user:{type:"string",description:"Filter by user email or display name"},compliance:{type:"string",enum:["compliant","noncompliant","unknown","all"],description:"Filter by compliance state. Default: all"},limit:{type:"number",description:"Max results (default 25, max 100)"}}}},
   {name:"get_intune_device",description:"Get full details for a specific Intune-managed device by device name, serial number, or device ID.",inputSchema:{type:"object",properties:{device:{type:"string",description:"Device name, serial number, or Intune device ID"}},required:["device"]}},
   {name:"get_noncompliant_devices",description:"List all non-compliant devices in Intune with the reason they are out of compliance. Use to identify devices that need attention.",inputSchema:{type:"object",properties:{platform:{type:"string",description:"Filter by OS: windows, ios, macos, android. Leave blank for all."}}}},
@@ -328,11 +326,12 @@ const TOOLS = [
   {name:"get_intune_apps",description:"List apps deployed through Intune and their installation status across devices.",inputSchema:{type:"object",properties:{app_name:{type:"string",description:"Filter by app name (partial match)"},limit:{type:"number",description:"Max results (default 20)"}}}}
 ];
 
-// â”€â”€ Tool handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Tool handlers ─────────────────────────────────────────────────────────────
 function handleTool(name, args) {
   // KB tools
-  if(name==="search_kb"){return (function(q){var sb=JSON.stringify({requests:[{entityTypes:["driveItem"],query:{queryString:q},from:0,size:10,fields:["name","webUrl","id","parentReference"],contentSources:["/sites/f7f60628-eba1-4793-a9f4-0bc2216abb9e,dbdad492-07e1-4279-a0a4-8c2e1834eddf"]}]});return getGraphToken().then(function(t){return new Promise(function(done){var data=Buffer.from(sb,"utf8");var r=https.request({hostname:"graph.microsoft.com",path:"/v1.0/search/query",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":data.length}},function(res){var d="";res.on("data",function(c){d+=c;});res.on("end",function(){try{var j=JSON.parse(d),hits=[];(j.value||[]).forEach(function(v){(v.hitsContainers||[]).forEach(function(hc){(hc.hits||[]).forEach(function(it){if(it.resource){hits.push({name:(it.resource.name||""),library:((it.resource.webUrl||"").split("/").slice(-2,-1)[0]||"KB"),webUrl:(it.resource.webUrl||""),id:(it.resource.id||""),driveId:((it.resource.parentReference||{}).driveId||"")});}});});});done({content:[{type:"text",text:hits.length?JSON.stringify(hits,null,2):"No results found."}]});}catch(e){done({content:[{type:"text",text:"No results found."}]});}});});r.on("error",function(){done({content:[{type:"text",text:"No results found."}]});});r.write(data);r.end();});}).catch(function(){return{content:[{type:"text",text:"No results found."}]};});})(args.query||"");}
-  if(name==="sync_learn_to_kb"){return syncLearnTopicToKB(args.topic,args.library,args.max_articles||3).then(function(r){var msg=r.uploaded>0?"Synced "+r.uploaded+" article(s) to "+r.library+":\n"+r.articles.map(function(a){return"â€¢ "+a.title+" ("+a.file+")";}).join("\n"):"Nothing uploaded. Skipped: "+r.skipped+" (no content or upload error).";return{content:[{type:"text",text:msg}]};}).catch(function(e){return{content:[{type:"text",text:"sync_learn_to_kb error: "+e.message}]};});}
+  if(name==="search_kb"){return getSiteId().then(function(id){return graph("/sites/"+id+"/drive/root/search(q='"+encodeURIComponent(args.query)+"')");}).then(function(d){var r=(d.value||[]).slice(0,8).map(function(f){return{name:f.name,id:f.id,driveId:f.parentReference&&f.parentReference.driveId,library:f.parentReference&&f.parentReference.name};});if(r.length)return{content:[{type:"text",text:JSON.stringify(r,null,2)}]};// Auto-fallback: KB empty → pull from Microsoft Learn and upload
+    return syncLearnTopicToKB(args.query,null,3).then(function(sync){if(sync.uploaded>0){return{content:[{type:"text",text:"KB had no results. Auto-synced "+sync.uploaded+" article(s) from Microsoft Learn into "+sync.library+":\n"+sync.articles.map(function(a){return"• "+a.title+" → "+a.file;}).join("\n")+"\n\nSearch your KB again to retrieve the content."}]};}return{content:[{type:"text",text:"No results in KB and no matching Microsoft Learn articles found for: "+args.query}]};});});}
+  if(name==="sync_learn_to_kb"){return syncLearnTopicToKB(args.topic,args.library,args.max_articles||3).then(function(r){var msg=r.uploaded>0?"Synced "+r.uploaded+" article(s) to "+r.library+":\n"+r.articles.map(function(a){return"• "+a.title+" ("+a.file+")";}).join("\n"):"Nothing uploaded. Skipped: "+r.skipped+" (no content or upload error).";return{content:[{type:"text",text:msg}]};}).catch(function(e){return{content:[{type:"text",text:"sync_learn_to_kb error: "+e.message}]};});}
   // Intune / Device Management tools
   if(name==="get_intune_devices"){
     var path="/deviceManagement/managedDevices?$top="+(args.limit||25)+"&$select=id,deviceName,operatingSystem,osVersion,complianceState,userDisplayName,userPrincipalName,serialNumber,lastSyncDateTime,managedDeviceOwnerType,enrolledDateTime,model,manufacturer,emailAddress";
@@ -365,9 +364,9 @@ function handleTool(name, args) {
     if(args.platform)ncPath="/deviceManagement/managedDevices?$filter=complianceState%20eq%20'noncompliant'%20and%20operatingSystem%20eq%20'"+args.platform+"'&$top=50&$select=id,deviceName,operatingSystem,osVersion,userDisplayName,userPrincipalName,serialNumber,lastSyncDateTime";
     return graphGet(ncPath).then(function(d){
       var devices=(d.value||[]);
-      if(!devices.length)return{content:[{type:"text",text:"âœ“ No non-compliant devices found"+(args.platform?" for "+args.platform:"")+"!"}]};
+      if(!devices.length)return{content:[{type:"text",text:"✓ No non-compliant devices found"+(args.platform?" for "+args.platform:"")+"!"}]};
       var list=devices.map(function(dev){return{name:dev.deviceName,user:dev.userDisplayName,os:dev.operatingSystem+" "+dev.osVersion,serial:dev.serialNumber,lastSync:dev.lastSyncDateTime};});
-      return{content:[{type:"text",text:"âš  "+devices.length+" non-compliant device(s):\n\n"+JSON.stringify(list,null,2)}]};
+      return{content:[{type:"text",text:"⚠ "+devices.length+" non-compliant device(s):\n\n"+JSON.stringify(list,null,2)}]};
     }).catch(function(e){return{content:[{type:"text",text:"get_noncompliant_devices error: "+e.message}]};});
   }
   if(name==="get_device_compliance"){
@@ -384,7 +383,7 @@ function handleTool(name, args) {
   if(name==="sync_intune_device"){
     return graphGet("/deviceManagement/managedDevices/"+args.device_id).then(function(dev){
       var b=JSON.stringify({});
-      return getGraphToken().then(function(t){return new Promise(function(resolve,reject){var data=Buffer.from(b,"utf8");var r=https.request({hostname:"graph.microsoft.com",path:"/v1.0/deviceManagement/managedDevices/"+args.device_id+"/syncDevice",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":data.length}},function(re){var d="";re.on("data",function(c){d+=c;});re.on("end",function(){resolve({status:re.statusCode,body:d});});});r.on("error",reject);r.write(data);r.end();});}).then(function(r){if(r.status===204||r.status===200)return{content:[{type:"text",text:"âœ“ Sync triggered for device: "+(dev.deviceName||args.device_id)+". Device will check in shortly."}]};return{content:[{type:"text",text:"Sync request returned HTTP "+r.status+": "+r.body}]};});
+      return getGraphToken().then(function(t){return new Promise(function(resolve,reject){var data=Buffer.from(b,"utf8");var r=https.request({hostname:"graph.microsoft.com",path:"/v1.0/deviceManagement/managedDevices/"+args.device_id+"/syncDevice",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":data.length}},function(re){var d="";re.on("data",function(c){d+=c;});re.on("end",function(){resolve({status:re.statusCode,body:d});});});r.on("error",reject);r.write(data);r.end();});}).then(function(r){if(r.status===204||r.status===200)return{content:[{type:"text",text:"✓ Sync triggered for device: "+(dev.deviceName||args.device_id)+". Device will check in shortly."}]};return{content:[{type:"text",text:"Sync request returned HTTP "+r.status+": "+r.body}]};});
     }).catch(function(e){return{content:[{type:"text",text:"sync_intune_device error: "+e.message}]};});
   }
   if(name==="get_intune_apps"){
@@ -395,7 +394,7 @@ function handleTool(name, args) {
       return{content:[{type:"text",text:apps.length?JSON.stringify(apps,null,2):"No apps found"+(args.app_name?" matching: "+args.app_name:"")+"."}]};
     }).catch(function(e){return{content:[{type:"text",text:"get_intune_apps error: "+e.message}]};});
   }
-  if(name==="sync_vendor_docs"){var validVendors=["cisco","dell","hp","hpe","fujitsu","apple"];if(!validVendors.includes((args.vendor||"").toLowerCase()))return Promise.resolve({content:[{type:"text",text:"Invalid vendor. Use: cisco, dell, hp, hpe, or fujitsu"}]});return syncVendorDocsToKB(args.vendor,args.topic,args.library||"troubleshooting",args.max_articles||3).then(function(r){var msg=r.uploaded>0?"Synced "+r.uploaded+" "+r.vendor.toUpperCase()+" article(s) to "+r.library+":\n"+r.articles.map(function(a){return"â€¢ "+a.title+" ("+a.file+")";}).join("\n"):"No "+r.vendor.toUpperCase()+" articles found or uploaded for: "+args.topic+". Skipped: "+r.skipped;return{content:[{type:"text",text:msg}]};}).catch(function(e){return{content:[{type:"text",text:"sync_vendor_docs error: "+e.message}]};});}
+  if(name==="sync_vendor_docs"){var validVendors=["cisco","dell","hp","hpe","fujitsu","apple"];if(!validVendors.includes((args.vendor||"").toLowerCase()))return Promise.resolve({content:[{type:"text",text:"Invalid vendor. Use: cisco, dell, hp, hpe, or fujitsu"}]});return syncVendorDocsToKB(args.vendor,args.topic,args.library||"troubleshooting",args.max_articles||3).then(function(r){var msg=r.uploaded>0?"Synced "+r.uploaded+" "+r.vendor.toUpperCase()+" article(s) to "+r.library+":\n"+r.articles.map(function(a){return"• "+a.title+" ("+a.file+")";}).join("\n"):"No "+r.vendor.toUpperCase()+" articles found or uploaded for: "+args.topic+". Skipped: "+r.skipped;return{content:[{type:"text",text:msg}]};}).catch(function(e){return{content:[{type:"text",text:"sync_vendor_docs error: "+e.message}]};});}
   if(name==="list_library"){return getDrives().then(function(drives){var drive=drives.find(function(d){return d.name.toLowerCase()===args.library.toLowerCase();});if(!drive)return{content:[{type:"text",text:"Available: "+drives.map(function(d){return d.name;}).join(", ")}]};return graph("/drives/"+drive.id+"/root/children").then(function(d){return{content:[{type:"text",text:JSON.stringify((d.value||[]).map(function(f){return{name:f.name,id:f.id,driveId:drive.id};}),null,2)}]};})});}
   if(name==="read_file"){return graph("/drives/"+args.drive_id+"/items/"+args.item_id).then(function(meta){var url=meta["@microsoft.graph.downloadUrl"];if(!url)return{content:[{type:"text",text:"Cannot download."}]};var u=new URL(url);return new Promise(function(resolve,reject){https.get({hostname:u.hostname,path:u.pathname+u.search},function(res){var d="";res.on("data",function(c){d+=c;});res.on("end",function(){resolve({content:[{type:"text",text:d.substring(0,8000)}]});});}).on("error",reject);});});}
   if(name==="ms_service_health"){var p=args&&args.service?"/admin/serviceAnnouncement/issues?$filter=status%20ne%20%27resolved%27%20and%20contains(service,%27"+encodeURIComponent(args.service)+"%27)":"/admin/serviceAnnouncement/issues?$filter=status%20ne%20%27resolved%27&$top=10";return graph(p).then(function(d){var issues=(d.value||[]).map(function(i){return{title:i.title,service:i.service,status:i.status,severity:i.classification};});return{content:[{type:"text",text:issues.length?"Active issues:\n"+JSON.stringify(issues,null,2):"All Microsoft 365 services healthy!"}]};});}
@@ -418,24 +417,24 @@ function handleTool(name, args) {
   if(name==="list_teams"){return graphGet("/groups?$filter=resourceProvisioningOptions/Any(x:x%20eq%20%27Team%27)&$select=id,displayName,description").then(function(d){return{content:[{type:"text",text:JSON.stringify((d.value||[]).map(function(t){return{id:t.id,name:t.displayName};}),null,2)}]};}).catch(function(e){return{content:[{type:"text",text:"list_teams error: "+e.message}]};});}
   if(name==="list_channels"){return graphGet("/teams/"+args.team_id+"/channels?$select=id,displayName,membershipType").then(function(d){return{content:[{type:"text",text:JSON.stringify((d.value||[]).map(function(c){return{id:c.id,name:c.displayName};}),null,2)}]};}).catch(function(e){return{content:[{type:"text",text:"list_channels error: "+e.message}]};});}
   if(name==="get_channel_messages"){return graphGet("/teams/"+args.team_id+"/channels/"+args.channel_id+"/messages?$top="+(args.limit||10)).then(function(d){var msgs=(d.value||[]).map(function(m){return{from:(m.from&&m.from.user&&m.from.user.displayName)||"unknown",time:m.createdDateTime,message:(m.body&&m.body.content||"").replace(/<[^>]+>/g," ").trim().substring(0,300)};});return{content:[{type:"text",text:msgs.length?JSON.stringify(msgs,null,2):"No messages found."}]};}).catch(function(e){return{content:[{type:"text",text:"get_channel_messages error: "+e.message}]};});}
-  if(name==="send_channel_message"){var wUrl=new URL(TEAMS_WEBHOOK_URL);var wBody=JSON.stringify({"@type":"MessageCard","@context":"http://schema.org/extensions","summary":args.message,"themeColor":"0076D7","text":args.html?args.message:"<pre>"+args.message+"</pre>"});return new Promise(function(resolve){var d=Buffer.from(wBody,"utf8");var r=https.request({hostname:wUrl.hostname,path:wUrl.pathname+wUrl.search,method:"POST",headers:{"Content-Type":"application/json","Content-Length":d.length}},function(re){var rb="";re.on("data",function(c){rb+=c;});re.on("end",function(){resolve({content:[{type:"text",text:re.statusCode===200?"Message posted to Teams â€” General channel":"Teams error (HTTP "+re.statusCode+"): "+rb}]});});});r.on("error",function(e){resolve({content:[{type:"text",text:"send_channel_message error: "+e.message}]});});r.write(d);r.end();});}
+  if(name==="send_channel_message"){var wUrl=new URL(TEAMS_WEBHOOK_URL);var wBody=JSON.stringify({"@type":"MessageCard","@context":"http://schema.org/extensions","summary":args.message,"themeColor":"0076D7","text":args.html?args.message:"<pre>"+args.message+"</pre>"});return new Promise(function(resolve){var d=Buffer.from(wBody,"utf8");var r=https.request({hostname:wUrl.hostname,path:wUrl.pathname+wUrl.search,method:"POST",headers:{"Content-Type":"application/json","Content-Length":d.length}},function(re){var rb="";re.on("data",function(c){rb+=c;});re.on("end",function(){resolve({content:[{type:"text",text:re.statusCode===200?"Message posted to Teams — General channel":"Teams error (HTTP "+re.statusCode+"): "+rb}]});});});r.on("error",function(e){resolve({content:[{type:"text",text:"send_channel_message error: "+e.message}]});});r.write(d);r.end();});}
 
   if(name==="build_scenario"){return handleTool("search_kb",{query:args.problem}).then(function(kb){return Promise.all([Promise.resolve(kb),handleTool("ms_service_health",{}),handleTool("search_microsoft_learn",{query:args.problem})]);}).then(function(results){var now=new Date().toISOString().split("T")[0];var md="# Field Scenario: "+args.problem+"\n\n_Generated: "+now+"_\n\n";md+="## KB Results\n\n"+results[0].content[0].text+"\n\n";md+="## M365 Health\n\n"+results[1].content[0].text+"\n\n";md+="## Microsoft Learn\n\n"+results[2].content[0].text;return{content:[{type:"text",text:md}]};});}
 
   return Promise.resolve({content:[{type:"text",text:"Unknown tool: "+name}]});
 }
 
-// â”€â”€ Auth check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Auth check ────────────────────────────────────────────────────────────────
 function checkAuth(reqHttp) {
   var auth = reqHttp.headers["authorization"] || "";
   return auth === "Bearer " + API_KEY;
 }
 
-// â”€â”€ MCP SSE transport â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── MCP SSE transport ─────────────────────────────────────────────────────────
 function handleSSE(reqHttp, res) {
   if (!checkAuth(reqHttp)) {
     res.writeHead(401, {"Content-Type": "application/json"});
-    res.end(JSON.stringify({error: "Unauthorized â€” provide Authorization: Bearer <api-key>"}));
+    res.end(JSON.stringify({error: "Unauthorized — provide Authorization: Bearer <api-key>"}));
     return;
   }
   var sessionId = crypto.randomUUID();
@@ -446,7 +445,7 @@ function handleSSE(reqHttp, res) {
     "Access-Control-Allow-Origin": "*",
   });
   sessions.set(sessionId, res);
-  // Send endpoint event â€” tells Claude where to POST messages
+  // Send endpoint event — tells Claude where to POST messages
   res.write("event: endpoint\ndata: /message?sessionId=" + sessionId + "\n\n");
   // Keep-alive ping every 30s
   var ping = setInterval(function() {
@@ -519,7 +518,7 @@ function processMCP(msg, sseRes) {
   }
 }
 
-// â”€â”€ Chat intent router â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Chat intent router ────────────────────────────────────────────────────────
 function extractName(msg, keywords) {
   for (var kw of keywords) {
     var idx = msg.toLowerCase().indexOf(kw.toLowerCase());
@@ -614,38 +613,41 @@ function routeChat(message) {
 
 function formatChatResponse(toolName, rawText) {
   if (!rawText||rawText.trim()==="") return "No response received.";
+
+  // No KB results — LOW CONFIDENCE fallback
+  if (toolName==="search_kb" && (rawText.includes("No results") || rawText.includes("no results"))) {
+    return "[LOW CONFIDENCE]\nArticle ID: N/A | Category: General IT | Severity: Low\n\nI could not find a specific KB article for this issue. Here is my best guidance based on standard IT practice.\n\n"+rawText+"\n\nI recommend raising a support ticket at https://itportal.yourorg.com so this can be formally investigated and potentially added to the KB.\n\nSource: General IT best practice (no KB article found)";
+  }
   // Try to parse JSON for richer formatting
   try {
     var data=JSON.parse(rawText);
-    if(Array.isArray(data)&&data.length===0) return "No results found.";
+    if(Array.isArray(data)&&data.length===0) return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: IT Operations | Severity: Low\n\nNo results found.\n\nSource: Live Azure AD / Intune Data";
     if(Array.isArray(data)) {
       if(toolName==="get_intune_devices"||toolName==="get_noncompliant_devices") {
-        return (toolName==="get_noncompliant_devices"?"âš ï¸ ":"📱 ")+(data.length)+" device(s) found:\n\n"+data.map(function(d){return "📱 "+d.name+"\n   👤 "+(d.user||d.email||"Unknown")+"\n   💻 "+(d.os||"")+"\n   "+(d.compliance==="compliant"?"âœ…":"âš ï¸")+" "+d.compliance+"\n   🕐 Last sync: "+(d.lastSync?new Date(d.lastSync).toLocaleString():"Unknown");}).join("\n\n");
+        var header="[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Device Management | Severity: "+(toolName==="get_noncompliant_devices"?"High":"Low")+"\n\n";
+        var body=(toolName==="get_noncompliant_devices"?"⚠️ ":"📱 ")+(data.length)+" device(s) found:\n\n"+data.map(function(d){return "📱 "+d.name+"\n   👤 "+(d.user||d.email||"Unknown")+"\n   💻 "+(d.os||"")+"\n   "+(d.compliance==="compliant"?"✅":"⚠️")+" "+d.compliance+"\n   🕐 Last sync: "+(d.lastSync?new Date(d.lastSync).toLocaleString():"Unknown");}).join("\n\n");
+        return header+body+"\n\nSource: Live Intune Data";
       }
-      if(toolName==="search_users") return "👥 "+data.length+" user(s) found:\n\n"+data.map(function(u){return "👤 "+u.name+"\n   "+u.upn+"\n   "+(u.dept||"No department")+" | "+(u.enabled?"âœ… Active":"🔴 Disabled");}).join("\n\n");
-      if(toolName==="get_channel_messages") return "💬 Recent Teams messages:\n\n"+data.map(function(msg){return "â€¢ "+msg.from+" ("+new Date(msg.time).toLocaleString()+"):\n  "+msg.message;}).join("\n\n");
-      if(toolName==="search_kb") return "🔚 "+data.length+" KB article(s) found:\n\n"+data.map(function(f,i){return (i+1)+". 📄 "+f.name.replace(".md","").replace(/-/g," ")+"\n   Library: "+(f.library||"KB");}).join("\n\n")+"\n\nAsk me to read any of these articles for details.";
-      if(toolName==="get_device_compliance") return "🔍 Compliance status:\n\n"+data.map(function(d){return "📱 "+d.device+"\n   "+(d.compliance==="compliant"?"âœ… Compliant":"âš ï¸ "+d.compliance)+"\n   💻 "+d.os+"\n   🔐 Encrypted: "+(d.encrypted?"Yes":"No")+"\n   🕐 "+new Date(d.lastSync).toLocaleString();}).join("\n\n");
-      if(toolName==="get_user_groups") return "🏷ï¸ Group memberships:\n\n"+data.map(function(g){return "â€¢ "+g.name+(g.description?"\n  "+g.description:"");}).join("\n\n");
-      if(toolName==="get_sign_in_logs") return "🔐 Recent sign-ins:\n\n"+data.slice(0,8).map(function(s){return "â€¢ "+(s.userDisplayName||s.userPrincipalName||"Unknown")+"\n  App: "+(s.appDisplayName||"Unknown")+"\n  IP: "+(s.ipAddress||"Unknown")+"\n  "+(s.status&&s.status.errorCode===0?"âœ… Success":"âŒ Failed")+"\n  🕐 "+new Date(s.createdDateTime).toLocaleString();}).join("\n\n");
-      if(toolName==="get_intune_apps") return "ðŸ“¦ "+data.length+" app(s) deployed:\n\n"+data.map(function(a){return "â€¢ "+a.name+(a.publisher?"\n  Publisher: "+a.publisher:"")+(a.state?"\n  State: "+a.state:"");}).join("\n\n");
+      if(toolName==="search_users") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Account Access | Severity: Low\n\n👥 "+data.length+" user(s) found:\n\n"+data.map(function(u){return "👤 "+u.name+"\n   "+u.upn+"\n   "+(u.dept||"No department")+" | "+(u.enabled?"✅ Active":"🔴 Disabled");}).join("\n\n")+"\n\nSource: Live Azure AD Data";
+      if(toolName==="get_channel_messages") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Communication | Severity: Low\n\n💬 Recent Teams messages:\n\n"+data.map(function(msg){return "• "+msg.from+" ("+new Date(msg.time).toLocaleString()+"):\n  "+msg.message;}).join("\n\n")+"\n\nSource: Live Microsoft Teams Data";
+      if(toolName==="search_kb") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Knowledge Base | Severity: Low\n\n📚 "+data.length+" KB article(s) found:\n\n"+data.map(function(f,i){return (i+1)+". 📄 "+f.name.replace(".md","").replace(/-/g," ")+"\n   Library: "+(f.library||"KB");}).join("\n\n")+"\n\nAsk me to read any of these articles for details.\n\nSource: IT Knowledge Base";
+      if(toolName==="get_device_compliance") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Device Management | Severity: Medium\n\n🔍 Compliance status:\n\n"+data.map(function(d){return "📱 "+d.device+"\n   "+(d.compliance==="compliant"?"✅ Compliant":"⚠️ "+d.compliance)+"\n   💻 "+d.os+"\n   🔐 Encrypted: "+(d.encrypted?"Yes":"No")+"\n   🕐 "+new Date(d.lastSync).toLocaleString();}).join("\n\n")+"\n\nSource: Live Intune Compliance Data";
+      if(toolName==="get_user_groups") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Account Access | Severity: Low\n\n🏷️ Group memberships:\n\n"+data.map(function(g){return "• "+g.name+(g.description?"\n  "+g.description:"");}).join("\n\n")+"\n\nSource: Live Azure AD Data";
+      if(toolName==="get_sign_in_logs") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Security | Severity: Medium\n\n🔐 Recent sign-ins:\n\n"+data.slice(0,8).map(function(s){return "• "+(s.userDisplayName||s.userPrincipalName||"Unknown")+"\n  App: "+(s.appDisplayName||"Unknown")+"\n  IP: "+(s.ipAddress||"Unknown")+"\n  "+(s.status&&s.status.errorCode===0?"✅ Success":"❌ Failed")+"\n  🕐 "+new Date(s.createdDateTime).toLocaleString();}).join("\n\n")+"\n\nSource: Live Azure AD Sign-in Logs";
+      if(toolName==="get_intune_apps") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Software & Applications | Severity: Low\n\n📦 "+data.length+" app(s) deployed:\n\n"+data.map(function(a){return "• "+a.name+(a.publisher?"\n  Publisher: "+a.publisher:"")+(a.state?"\n  State: "+a.state:"");}).join("\n\n")+"\n\nSource: Live Intune App Deployment Data";
       return rawText;
     }
     // Single object
-    if(toolName==="get_user") return "👤 "+data.displayName+"\nðŸ“§ "+data.upn+"\nðŸ¢ "+(data.department||"No department")+"\nðŸ’¼ "+(data.jobTitle||"No title")+"\n"+(data.accountEnabled?"âœ… Account active":"🔴 Account disabled")+"\nðŸ”‘ Password last changed: "+(data.lastPasswordChange?new Date(data.lastPasswordChange).toLocaleDateString():"Unknown");
-    if(toolName==="get_intune_device") return "📱 "+data.name+"\n👤 "+(data.user||data.email||"Unknown")+"\n💻 "+(data.os||"")+"\n🔧 "+(data.model||"")+"\n🔢 Serial: "+(data.serial||"Unknown")+"\n"+(data.compliance==="compliant"?"âœ… Compliant":"âš ï¸ "+data.compliance)+"\n🔐 Encrypted: "+(data.encrypted?"Yes":"No")+"\nðŸ’¾ Storage: "+(data.storage?data.storage.freeGB+" GB free of "+data.storage.totalGB+" GB":"Unknown")+"\n🕐 Last sync: "+(data.lastSync?new Date(data.lastSync).toLocaleString():"Unknown");
+    if(toolName==="get_user") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Account Access | Severity: Low\n\n👤 "+data.displayName+"\n📧 "+data.upn+"\n🏢 "+(data.department||"No department")+"\n💼 "+(data.jobTitle||"No title")+"\n"+(data.accountEnabled?"✅ Account active":"🔴 Account disabled")+"\n🔑 Password last changed: "+(data.lastPasswordChange?new Date(data.lastPasswordChange).toLocaleDateString():"Unknown")+"\n\nSource: Live Azure AD Data";
+    if(toolName==="get_intune_device") return "[HIGH CONFIDENCE]\nArticle ID: N/A | Category: Hardware | Severity: Low\n\n📱 "+data.name+"\n👤 "+(data.user||data.email||"Unknown")+"\n💻 "+(data.os||"")+"\n🔧 "+(data.model||"")+"\n🔢 Serial: "+(data.serial||"Unknown")+"\n"+(data.compliance==="compliant"?"✅ Compliant":"⚠️ "+data.compliance)+"\n🔐 Encrypted: "+(data.encrypted?"Yes":"No")+"\n💾 Storage: "+(data.storage?data.storage.freeGB+" GB free of "+data.storage.totalGB+" GB":"Unknown")+"\n🕐 Last sync: "+(data.lastSync?new Date(data.lastSync).toLocaleString():"Unknown")+"\n\nSource: Live Intune Device Data";
     return rawText;
   } catch(e) { return rawText; }
 }
 
-// â”€â”€ Chat HTML UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-function callClaude(msg){return new Promise(function(resolve){var https=require('https');var body=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,system:'You are an expert IT support technician. Answer IT questions concisely and practically.',messages:[{role:'user',content:msg}]});var req=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(body)}},function(res){var d='';res.on('data',function(c){d+=c});res.on('end',function(){try{var p=JSON.parse(d);resolve(p.content&&p.content[0]?p.content[0].text:'No response.');}catch(e){resolve('AI error.');}});});req.on('error',function(e){resolve('Error: '+e.message);});req.write(body);req.end();});}
-
-function callClaude(msg){return new Promise(function(resolve){var https=require('https');var body=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,system:'You are an expert IT support technician for an organization using Microsoft 365, Windows 11, Cisco, and enterprise hardware. Answer helpfully and concisely.',messages:[{role:'user',content:msg}]});var req=https.request({hostname:'api.anthropic.com',path:'/v1/messages',method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(body)}},function(res){var d='';res.on('data',function(chunk){d+=chunk});res.on('end',function(){try{var p=JSON.parse(d);resolve(p.content&&p.content[0]?p.content[0].text:'No response.');}catch(e){resolve('AI parse error.');}});});req.on('error',function(e){resolve('AI error: '+e.message);});req.write(body);req.end();});}
+// ── Chat HTML UI ──────────────────────────────────────────────────────────────
 var CHAT_HTML = `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8">
+<head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>IT Agent</title>
@@ -683,14 +685,14 @@ button:active{background:#005a9e}
   <span>Field Support</span>
 </header>
 <div id="msgs">
-  <div class="bubble agent">Hi! I'm your IT Knowledge Agent. Ask me anything â€” devices, users, KB articles, service health, or vendor troubleshooting.
+  <div class="bubble agent">Hi! I'm your IT Knowledge Agent. Ask me anything — devices, users, KB articles, service health, or vendor troubleshooting.
 <div class="chips">
-  <span class="chip" onclick="ask(this.textContent)">Non-compliant devices</span>
+  <span class="chip" onclick="ask(this.textContent)">Cisco phone install workflow</span>
+  <span class="chip" onclick="ask(this.textContent)">Autopilot new device setup</span>
+  <span class="chip" onclick="ask(this.textContent)">How do I reset my Active Directory password</span>
+  <span class="chip" onclick="ask(this.textContent)">VPN not connecting</span>
+  <span class="chip" onclick="ask(this.textContent)">Printer not showing up</span>
   <span class="chip" onclick="ask(this.textContent)">M365 service health</span>
-  <span class="chip" onclick="ask(this.textContent)">Step-by-step: reset Windows 11 network</span>
-  <span class="chip" onclick="ask(this.textContent)">Script: flush DNS on Windows 11</span>
-  <span class="chip" onclick="ask(this.textContent)">Cisco switch port not working steps</span>
-  <span class="chip" onclick="ask(this.textContent)">Fujitsu ScanSnap Windows 11 driver setup</span>
 </div>
   </div>
 </div>
@@ -727,7 +729,7 @@ document.getElementById('inp').focus();
 </body>
 </html>`;
 
-// â”€â”€ HTTP server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── HTTP server ───────────────────────────────────────────────────────────────
 const server = http.createServer(function(reqHttp, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -739,7 +741,7 @@ const server = http.createServer(function(reqHttp, res) {
   if (path === "/sse" && reqHttp.method === "GET") { handleSSE(reqHttp, res); return; }
   if (path === "/message" && reqHttp.method === "POST") { handleMessage(reqHttp, res); return; }
 
-  // â”€â”€ Web Chat UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Web Chat UI ──────────────────────────────────────────────────────────
   if (path === "/chat" && reqHttp.method === "GET") {
     res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
     res.end(CHAT_HTML);
@@ -775,7 +777,7 @@ const server = http.createServer(function(reqHttp, res) {
           msgLower.includes("hp ")||msgLower.includes("laserjet")||msgLower.includes("elitebook")||msgLower.includes("hewlett")?"hp":
           msgLower.includes("apple")||msgLower.includes("macbook")||msgLower.includes("iphone")||msgLower.includes("ipad")||msgLower.includes("macos")?"apple":null;
 
-        // â”€â”€ Smart article processor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Smart article processor ──────────────────────────────────────────
         function processArticle(articleText, question) {
           var q = (question||"").toLowerCase();
           var wantsScript = /script|powershell|command|cmd|terminal|bash|automat/i.test(q);
@@ -815,7 +817,7 @@ const server = http.createServer(function(reqHttp, res) {
 
           var response = "";
 
-          // Script mode â€” lead with code
+          // Script mode — lead with code
           if (wantsScript && codeBlocks.length > 0) {
             response += "💻 Script / Command Line:\n\n";
             codeBlocks.slice(0,2).forEach(function(c,i){
@@ -835,7 +837,7 @@ const server = http.createServer(function(reqHttp, res) {
               .replace(/\[([^\]]+)\]\([^)]+\)/g,"$1")
               .trim();
             if (!content || content.length < 30) return;
-            if (s.title) response += "\nðŸ“Œ "+s.title+"\n";
+            if (s.title) response += "\n📌 "+s.title+"\n";
             response += content.substring(0,900)+"\n";
             added++;
           });
@@ -848,8 +850,133 @@ const server = http.createServer(function(reqHttp, res) {
           return response.trim().substring(0,3500) + (response.length>3500 ? "\n\n[Reply 'continue' for more details]" : "");
         }
 
-        function readAndRespond(files, prefix) {
-          // Read top 2 articles and combine
+        // ── Detect workflow type for OneNote auto-creation ───────────────────
+        var workflowType = null;
+        var workflowTitle = null;
+        if (/cisco.*(phone|ip phone|7800|8800|8900)|phone.*(install|setup|deploy)/i.test(message)) {
+          workflowType = "cisco_phone";
+          workflowTitle = "Cisco Phone Install — " + new Date().toLocaleDateString("en-GB");
+        } else if (/autopilot|new.*(laptop|computer|device|pc)|enroll.*device|deploy.*computer/i.test(message)) {
+          workflowType = "autopilot";
+          workflowTitle = "Autopilot Deployment — " + new Date().toLocaleDateString("en-GB");
+        } else if (/printer.*(setup|install|config)|install.*printer/i.test(message)) {
+          workflowType = "printer";
+          workflowTitle = "Printer Setup — " + new Date().toLocaleDateString("en-GB");
+        } else if (/network.*(config|setup)|switch.*(config|setup|port)|wifi.*(setup|config)/i.test(message)) {
+          workflowType = "network";
+          workflowTitle = "Network Configuration — " + new Date().toLocaleDateString("en-GB");
+        }
+
+        // ── OneNote workflow creator ─────────────────────────────────────────
+        var ONENOTE_USER = "manueltucker@claudeitagent.onmicrosoft.com";
+        var ONENOTE_NOTEBOOK = "IT Workflows";
+        var SECTION_MAP = {cisco_phone:"Cisco Phone Installs",autopilot:"Autopilot Deployments",network:"Network Configuration",printer:"Printer Setup",custom:"Custom Workflows"};
+        var WORKFLOW_TEMPLATES = {
+          cisco_phone:[
+            {heading:"Pre-Installation Checks",items:["Unbox phone and verify model against work order","Confirm MAC address matches deployment sheet","Check PoE switch port is active and tagged to voice VLAN","Verify DHCP scope has available IPs for voice VLAN","Confirm CUCM device profile is ready for this MAC"]},
+            {heading:"Physical Installation",items:["Mount bracket and place phone","Connect ethernet cable to PoE switch port","Connect handset and headset if required","Power on and confirm boot screen appears","Note the IP address displayed during boot"]},
+            {heading:"Phone Registration",items:["Confirm phone registers in CUCM","Verify correct extension (DN) is assigned","Test internal call — confirm audio both ways","Test external call via PSTN","Confirm voicemail button routes correctly"]},
+            {heading:"Configuration",items:["Set correct time zone and date/time","Configure speed dials as requested","Test intercom and call pickup group","Verify BLF keys if applicable","Label phone with extension and user name"]},
+            {heading:"Sign-Off",items:["User confirmed phone is working","Photo taken of installation","Work order updated with MAC, IP, extension, location","Post completion to Teams IT channel"]}
+          ],
+          autopilot:[
+            {heading:"Pre-Deployment Checks",items:["Confirm serial number is registered in Autopilot","Verify Autopilot profile is assigned","Confirm user M365 licence is active","Check Wi-Fi or ethernet available on site","Confirm user MFA is configured"]},
+            {heading:"Hardware Setup",items:["Unbox and connect to power","Connect ethernet if Wi-Fi not available","Power on and wait for OOBE screen","Select region and keyboard layout","Confirm network connection shown"]},
+            {heading:"Autopilot Enrollment",items:["Enter user corporate email address","Wait for Autopilot profile to download","Confirm organisation branding appears","Complete MFA when prompted","Do NOT interrupt — wait for policies to apply"]},
+            {heading:"Verification",items:["Confirm OneDrive sync starts automatically","Open Outlook and confirm mailbox loads","Open Teams and confirm correct account","Connect VPN and confirm it works","Check Intune compliance shows Compliant"]},
+            {heading:"Sign-Off",items:["User confirmed device is working","Intune shows Compliant","Device name recorded in work order","Old device collected if applicable","Post completion to Teams IT channel"]}
+          ]
+        };
+
+        function createOnenoteWorkflow(wfType, wfTitle) {
+          var sectionName = SECTION_MAP[wfType] || "Custom Workflows";
+          var steps = WORKFLOW_TEMPLATES[wfType] || [{heading:"Steps",items:["Complete task steps here"]}];
+          var dateStr = new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
+          var html = "<!DOCTYPE html><html><head><title>"+wfTitle+"</title></head><body>";
+          html += "<h1>"+wfTitle+"</h1>";
+          html += "<p><b>Date:</b> "+dateStr+" | <b>Status:</b> In Progress</p><hr/>";
+          steps.forEach(function(s){
+            html += "<h2>"+s.heading+"</h2>";
+            (s.items||[]).forEach(function(item){ html += "<p data-tag=\"to-do\">"+item+"</p>"; });
+          });
+          html += "<h2>Job Complete</h2>";
+          html += "<p data-tag=\"to-do\">All steps completed and verified</p>";
+          html += "<p data-tag=\"to-do\">Post completion message to Teams IT channel</p>";
+          html += "</body></html>";
+
+          // Ensure notebook exists
+          return getGraphToken().then(function(t){
+            return req({hostname:"graph.microsoft.com",path:"/v1.0/users/"+encodeURIComponent(ONENOTE_USER)+"/onenote/notebooks",method:"GET",headers:{Authorization:"Bearer "+t,Accept:"application/json"}});
+          }).then(function(r){
+            var nb=(r.body.value||[]).find(function(n){return n.displayName===ONENOTE_NOTEBOOK;});
+            if(nb) return nb.id;
+            return getGraphToken().then(function(t){
+              var b=JSON.stringify({displayName:ONENOTE_NOTEBOOK});
+              return req({hostname:"graph.microsoft.com",path:"/v1.0/users/"+encodeURIComponent(ONENOTE_USER)+"/onenote/notebooks",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":Buffer.byteLength(b)}},b);
+            }).then(function(r){return r.body.id;});
+          }).then(function(nbId){
+            // Ensure section exists
+            return getGraphToken().then(function(t){
+              return req({hostname:"graph.microsoft.com",path:"/v1.0/users/"+encodeURIComponent(ONENOTE_USER)+"/onenote/notebooks/"+nbId+"/sections",method:"GET",headers:{Authorization:"Bearer "+t,Accept:"application/json"}});
+            }).then(function(r){
+              var sec=(r.body.value||[]).find(function(s){return s.displayName===sectionName;});
+              if(sec) return sec.id;
+              return getGraphToken().then(function(t){
+                var b=JSON.stringify({displayName:sectionName});
+                return req({hostname:"graph.microsoft.com",path:"/v1.0/users/"+encodeURIComponent(ONENOTE_USER)+"/onenote/notebooks/"+nbId+"/sections",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/json","Content-Length":Buffer.byteLength(b)}},b);
+              }).then(function(r){return r.body.id;});
+            });
+          }).then(function(secId){
+            return getGraphToken().then(function(t){
+              var pageData=Buffer.from(html,"utf8");
+              return new Promise(function(resolve,reject){
+                var r=https.request({hostname:"graph.microsoft.com",path:"/v1.0/users/"+encodeURIComponent(ONENOTE_USER)+"/onenote/sections/"+secId+"/pages",method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"application/xhtml+xml","Content-Length":pageData.length}},function(re){var d="";re.on("data",function(c){d+=c;});re.on("end",function(){try{resolve({status:re.statusCode,body:JSON.parse(d)});}catch(e){resolve({status:re.statusCode,body:d});}});});
+                r.on("error",reject);r.write(pageData);r.end();
+              });
+            }).then(function(r){
+              if(r.status===201||r.status===200){
+                return (r.body.links&&r.body.links.oneNoteWebUrl&&r.body.links.oneNoteWebUrl.href)||"";
+              }
+              return "";
+            });
+          }).catch(function(){return "";});
+        }
+
+        // ── Focused search term for vendor queries ───────────────────────────
+        var focusedSearchTerm = message;
+        if (detectedVendor === "fujitsu") focusedSearchTerm = "fujitsu scansnap driver windows";
+        else if (detectedVendor === "cisco") {
+          if (msgLower.includes("anyconnect")||msgLower.includes("vpn")) focusedSearchTerm = "cisco anyconnect vpn";
+          else if (workflowType === "cisco_phone" || msgLower.includes("phone")) focusedSearchTerm = "RB-010 cisco phone installation";
+          else focusedSearchTerm = "cisco switch troubleshooting";
+        }
+        else if (detectedVendor === "dell") focusedSearchTerm = "dell " + (msgLower.includes("boot")?"boot troubleshooting":"hardware diagnostics");
+        else if (detectedVendor === "hp") focusedSearchTerm = "hp " + (msgLower.includes("print")?"printer setup":"hardware support");
+        // Workflow queries — search directly in Runbooks by article ID
+        if (workflowType === "cisco_phone") focusedSearchTerm = "RB-010 cisco phone installation";
+        if (workflowType === "autopilot") focusedSearchTerm = "RB-011 autopilot deployment";
+
+        // ── Build and send final response with optional OneNote link ─────────
+        function sendResponse(text, confidence) {
+          var conf = confidence || "HIGH";
+          var onenotePromise = workflowType
+            ? createOnenoteWorkflow(workflowType, workflowTitle)
+            : Promise.resolve("");
+
+          onenotePromise.then(function(oneNoteUrl) {
+            var finalResponse = "[" + conf + " CONFIDENCE]\n" + text;
+            if (oneNoteUrl) {
+              finalResponse += "\n\n---\n📋 OneNote Workflow Created\nA step-by-step checklist has been created for your field tech:\n" + oneNoteUrl + "\nShare this link with the tech — they can tick each step on their phone as they go.";
+            }
+            res.writeHead(200, {"Content-Type":"application/json"});
+            res.end(JSON.stringify({response: finalResponse}));
+          }).catch(function() {
+            res.writeHead(200, {"Content-Type":"application/json"});
+            res.end(JSON.stringify({response: "[" + conf + " CONFIDENCE]\n" + text}));
+          });
+        }
+
+        function readAndRespond(files, confidence) {
           var topFiles = files.slice(0,2).filter(function(f){return f.driveId&&f.id;});
           if (!topFiles.length) return null;
           return Promise.all(topFiles.map(function(f){
@@ -859,66 +986,82 @@ const server = http.createServer(function(reqHttp, res) {
           })).then(function(articles) {
             var combined = articles.map(function(a){return a.text;}).join("\n\n---\n\n");
             var processed = processArticle(combined, message);
-            var sources = articles.map(function(a){return "â€¢ "+a.name.replace(".md","").replace(/-/g," ");}).join("\n");
-            var response = (prefix||"")+"🔚 Sources:\n"+sources+"\n\n"+processed;
-            res.writeHead(200,{"Content-Type":"application/json"});
-            res.end(JSON.stringify({response:response}));
+            var firstName = articles[0].name || "";
+            var articleIdMatch = firstName.match(/^(kb|rb)-?(\d+)/i);
+            var articleId = articleIdMatch ? articleIdMatch[1].toUpperCase()+"-"+articleIdMatch[2].padStart(3,"0") : "KB";
+            var articleTitle = firstName.replace(/\.md$/i,"").replace(/^(kb|rb)-?\d+-?/i,"").replace(/-/g," ").replace(/\b\w/g,function(c){return c.toUpperCase();});
+            var contentLower = combined.toLowerCase();
+            var category = contentLower.includes("password")||contentLower.includes("account")?"Account Access":
+              contentLower.includes("vpn")||contentLower.includes("wifi")||contentLower.includes("network")?"Network & Connectivity":
+              contentLower.includes("hardware")||contentLower.includes("laptop")||contentLower.includes("device")?"Hardware":
+              contentLower.includes("software")||contentLower.includes("install")||contentLower.includes("portal")?"Software & Applications":
+              contentLower.includes("outlook")||contentLower.includes("email")?"Email & Communication":
+              contentLower.includes("phish")||contentLower.includes("ransomware")||contentLower.includes("security")?"Security":
+              contentLower.includes("print")?"Printing":"IT Operations";
+            var severity = contentLower.includes("critical")||contentLower.includes("ransomware")||contentLower.includes("phish")?"Critical":
+              contentLower.includes("warning")||contentLower.includes("urgent")?"High":"Low";
+
+            var text = "Article ID: "+articleId+" | Category: "+category+" | Severity: "+severity+"\n\n";
+            text += processed;
+            text += "\n\nSource: "+articleId+" — "+articleTitle;
+            sendResponse(text, confidence||"HIGH");
           });
         }
 
         handleTool(route.tool, route.args).then(function(result) {
-          var rawText = result.content && result.content[0] && result.content[0].text || ""; if(!rawText||rawText===""||rawText==="[]"||rawText==="null"){return callClaude(message).then(function(ai){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({response:ai}));return;});}
+          var rawText = result.content && result.content[0] && result.content[0].text || "";
 
-          // KB returned file list â€” read top article immediately
+          // KB returned file list — read immediately
           if (route.tool === "search_kb" && rawText.startsWith("[")) {
             try {
               var files = JSON.parse(rawText);
-              if (files.length > 0) return readAndRespond(files, "");
+              if (files.length > 0) return readAndRespond(files, "HIGH");
             } catch(e) {}
           }
 
-          // KB auto-synced from Learn â€” search again immediately and read result
-          if (route.tool === "search_kb" && rawText.includes("Auto-synced")) {
-            // Also trigger vendor sync in parallel if vendor detected
+          // KB auto-synced from Learn OR vendor detected — sync vendor docs then re-search with focused terms
+          if (route.tool === "search_kb" && (rawText.includes("Auto-synced") || rawText.includes("No results"))) {
             var vendorSync = detectedVendor
-              ? handleTool("sync_vendor_docs", {vendor: detectedVendor, topic: message, library: "Troubleshooting", max_articles: 2})
+              ? handleTool("sync_vendor_docs", {vendor:detectedVendor, topic:focusedSearchTerm, library:"Troubleshooting", max_articles:3})
               : Promise.resolve(null);
             return vendorSync.then(function() {
-              return handleTool("search_kb", {query: message});
+              // Search with focused term first, then fall back to original message
+              return handleTool("search_kb", {query: focusedSearchTerm});
             }).then(function(r2) {
               var t2 = r2.content && r2.content[0] && r2.content[0].text || "";
               if (t2.startsWith("[")) {
                 try {
                   var files2 = JSON.parse(t2);
-                  if (files2.length > 0) return readAndRespond(files2, detectedVendor ? "🔚 Sources: Microsoft Learn + " + detectedVendor.toUpperCase() + " Support\n\n" : "🔚 Source: Microsoft Learn\n\n");
+                  if (files2.length > 0) return readAndRespond(files2, rawText.includes("Auto-synced") ? "MEDIUM" : "HIGH");
                 } catch(e) {}
               }
-              res.writeHead(200, {"Content-Type":"application/json"});
-              res.end(JSON.stringify({response: rawText}));
-            });
-          }
-
-          // For vendor queries â€” also search KB for vendor articles
-          if (false && detectedVendor && route.tool === "search_kb" && rawText.includes("No results")) {
-            return handleTool("sync_vendor_docs", {vendor: detectedVendor, topic: message, library: "Troubleshooting", max_articles: 3}).then(function() {
-              return handleTool("search_kb", {query: message});
-            }).then(function(r2) {
-              var t2 = r2.content && r2.content[0] && r2.content[0].text || "";
-              if (t2.startsWith("[")) {
-                try {
-                  var files2 = JSON.parse(t2);
-                  if (files2.length > 0) return readAndRespond(files2, "🔚 Source: " + detectedVendor.toUpperCase() + " Support\n\n");
-                } catch(e) {}
-              }
-              res.writeHead(200, {"Content-Type":"application/json"});
-              res.end(JSON.stringify({response: "I searched Microsoft Learn and " + detectedVendor.toUpperCase() + " support but couldn't find specific content for: " + message}));
+              // Try original message as fallback search
+              return handleTool("search_kb", {query: message}).then(function(r3) {
+                var t3 = r3.content && r3.content[0] && r3.content[0].text || "";
+                if (t3.startsWith("[")) {
+                  try {
+                    var files3 = JSON.parse(t3);
+                    if (files3.length > 0) return readAndRespond(files3, "MEDIUM");
+                  } catch(e) {}
+                }
+                // Final fallback — nothing found anywhere
+                var text = "Article ID: N/A | Category: " + (detectedVendor ? detectedVendor.toUpperCase()+" Hardware" : "General IT") + " | Severity: Low\n\n";
+                text += "I could not find a specific KB article for this topic.\n\n";
+                if (detectedVendor) {
+                  text += "📝 NOTE: I searched the KB and " + detectedVendor.toUpperCase() + " support documentation but could not find a direct match for: " + message + "\n\n";
+                  text += "Steps to resolve:\n";
+                  text += "1. Visit the manufacturer support site directly\n";
+                  text += "2. Search for your exact model number and Windows version\n";
+                  text += "3. Download the latest driver from the official site\n\n";
+                }
+                text += "Escalation: Raise a ticket at https://itportal.yourorg.com or call ext. 1234\n\n";
+                text += "Source: General IT best practice (no KB article found)";
+                sendResponse(text, "LOW");
+              });
             });
           }
 
           var response = formatChatResponse(route.tool, rawText);
-          if(!response||response==='No response received.'||response==='No results found.'){
-            return callClaude(message).then(function(ai){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({response:ai}));});
-          }
           res.writeHead(200, {"Content-Type":"application/json"});
           res.end(JSON.stringify({response: response}));
         }).catch(function(e) {
@@ -926,7 +1069,8 @@ const server = http.createServer(function(reqHttp, res) {
           res.end(JSON.stringify({response: "Sorry, I ran into an error: " + e.message}));
         });
       } catch(e) {
-        callClaude(message||"IT support question").then(function(ai){res.writeHead(200,{"Content-Type":"application/json"});res.end(JSON.stringify({response:ai}));}).catch(function(){res.writeHead(200,{"Content-Type":"application/json"});res.end(JSON.stringify({response:"Sorry, I ran into an error. Please try again."}));});
+        res.writeHead(400, {"Content-Type":"application/json"});
+        res.end(JSON.stringify({error:"Invalid JSON"}));
       }
     });
     return;
@@ -967,4 +1111,3 @@ server.listen(PORT, function() {
 console.log("Web chat UI: /chat");
   console.log("MCP SSE endpoint: /sse");
 });
-
