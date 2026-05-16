@@ -14,7 +14,7 @@
 
 const https  = require("https");
 const http   = require("http");
-const crypto = require("crypto");h
+const crypto = require("crypto");
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT            = process.env.PORT || 3000;
