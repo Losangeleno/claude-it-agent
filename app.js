@@ -101,12 +101,16 @@ function searchVendorDocs(vendor, query, maxResults) {
 // Pull vendor support articles for a topic and upload to KB
 function syncVendorDocsToKB(vendor, topic, library, maxArticles) {
   maxArticles = maxArticles || 3;
-  var LIBRARY_DRIVES = {
-    "faqs":            "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d-0YkaK7sToQb9UfBCD0V8l",
-    "troubleshooting": "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d-s9M-vo64gR6RqcavYF4co",
-    "runbooks":        "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d8ntgJz28NVQ5IBUqynE4Gk",
-    "assets":          "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d9OV5yeNjEWSZzs4VJ2fbAB",
-    "cabling":         "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d9lg9HgzNLwT7cu7swCUvqF"
+  var 104
+  {
+        "faqs":              "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d-0YkaK7sToQb9UfBCD0V8l",
+              "troubleshooting":   "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d-s9M-vo64gR6RqcavYF4co",
+              "runbooks":          "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d8ntgJz28NVQ5IBUqynE4Gk",
+              "assets":            "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d9OV5yeNjEWSZzs4VJ2fbAB",
+              "cabling":           "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d9lg9HgzNLwT7cu7swCUvqF",
+              "scripts":           "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d96C-M7pFcrRrrSHfwEzJzp",
+              "documents":         "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d_N0jyU22jVQIL3JBS6B1jh",
+              "sbc_documentation": "b!KAb296Hrk0ep9AvCIWq7npLU2tvhB3lCoKSMLhg07d9FH8tL0QyLTY0xnWOEsXkM"
   };
   var lib = (library || "troubleshooting").toLowerCase();
   var driveId = LIBRARY_DRIVES[lib] || LIBRARY_DRIVES["troubleshooting"];
