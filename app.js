@@ -18,11 +18,7 @@ const crypto = require("crypto");
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT            = process.env.PORT || 3000;
-const TENANT_ID       = "e876d5db-a9f8-4e71-abc1-dcee4d8b0578";
-const CLIENT_ID       = "50d28fcf-1e66-452f-be81-36b40b640605";
-const CLIENT_SECRET   = "OCy8Q-qnTAqtSFK.8bIdnKVqcCv46zMFGkIhQbtc";
-const GRAPH_CLIENT_ID = "9c823e8e-5ce1-480c-8240-e19f6b23512e";
-const GRAPH_CLIENT_SECRET = "pMN8Q~7qNKr6pjEc4j9FLTHBA74rH.CwjwnjmbAg";
+const TENANT_ID = process.env.SP_TENANT_ID || "e876d5db-a9f8-4e71-abc1-dcee4d8b0578";const CLIENT_ID = process.env.SP_CLIENT_ID || "50d28fcf-1e66-452f-be81-36b40b640605";const CLIENT_SECRET = process.env.SP_CLIENT_SECRET || "OCy8Q-qnTAqtSFK.8bIdnKVqcCv46zMFGkIhQbtc";const GRAPH_CLIENT_ID = process.env.GRAPH_CLIENT_ID || "9c823e8e-5ce1-480c-8240-e19f6b23512e";const GRAPH_CLIENT_SECRET = process.env.GRAPH_CLIENT_SECRET || "pMN8Q~7qNKr6pjEc4j9FLTHBA74rH.CwjwnjmbAg";
 const TENANT_NAME     = "ClaudeITAgent";
 const SITE_NAME       = "ITKnowledgeBase";
 const CISCO_KEY       = "qtbj2x2knjbmewmnt3kss8hy";
