@@ -1106,7 +1106,8 @@ const server = http.createServer(function(reqHttp, res) {
     return;
   }
 
-  if (path === "/health") {
+  if (path === "/debug-kb") {    var out = {ts:new Date().toISOString()};    getGraphToken().then(function(tok){      out.token_acquired = true;      try { var p=tok.split(".")[1]; while(p.length%4)p+="="; var j=JSON.parse(Buffer.from(p.replace(/-/g,"+").replace(/_/g,"/"),"base64").toString()); out.token_roles=j.roles||[]; out.token_app_id=j.appid||j.azp; out.token_aud=j.aud; } catch(e){ out.token_decode_error=String(e); }      return getSiteId().then(function(sid){        out.site_id = sid;        return graphGet("/sites/"+sid+"/drives").then(function(d){          out.drives = (d && d.value ? d.value : []).map(function(x){return {name:x.name, id:x.id, webUrl:x.webUrl};});          res.writeHead(200,{"Content-Type":"application/json"});          res.end(JSON.stringify(out,null,2));        });      });    }).catch(function(e){      out.error = String(e && (e.message||e));      out.stack = e && e.stack ? String(e.stack).split("
+").slice(0,8) : null;      res.writeHead(200,{"Content-Type":"application/json"});      res.end(JSON.stringify(out,null,2));    });    return;  }  if (path === "/health") {
     res.writeHead(200, {"Content-Type":"application/json"});
     res.end(JSON.stringify({status:"healthy",version:"10.0.0",time:new Date().toISOString()}));
     return;
